@@ -49,12 +49,15 @@ indent.workspace = true
 semver.workspace = true
 sentry = { workspace = true, features = ["anyhow", "tracing", "debug-logs"] }
 serial_test.workspace = true
+libc = "0.2.153"
 
 [dev-dependencies]
 temp-env = "0.3.2"
 pretty_assertions.workspace = true
 
-
 [features]
 extra-tests = ["impure-unit-tests"]
 impure-unit-tests = []
+
+[target.'cfg(target_os = "macos")'.dependencies]
+kqueue = "1.0.8"

@@ -1,6 +1,8 @@
 use std::env;
 use std::fmt::{Debug, Display};
-use std::process::ExitCode;
+use std::process::{exit, ExitCode};
+use std::thread::sleep;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
 use bpaf::{Args, Parser};
@@ -9,7 +11,13 @@ use flox_rust_sdk::flox::FLOX_VERSION;
 use flox_rust_sdk::models::environment::managed_environment::ManagedEnvironmentError;
 use flox_rust_sdk::models::environment::remote_environment::RemoteEnvironmentError;
 use flox_rust_sdk::models::environment::{init_global_manifest, EnvironmentError};
+#[cfg(target_os = "linux")]
+use libc::{prctl, PR_SET_PDEATHSIG};
 use log::{debug, warn};
+#[cfg(target_os = "linux")]
+use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGUSR1};
+use nix::unistd::{fork, getpid, getppid, ForkResult, Pid};
+use once_cell::sync::OnceCell;
 use utils::init::{init_logger, init_sentry};
 use utils::{message, populate_default_nix_env_vars};
 
@@ -21,27 +29,131 @@ mod commands;
 mod config;
 mod utils;
 
-async fn run(args: FloxArgs) -> Result<()> {
-    init_logger(Some(args.verbosity));
-    set_user()?;
-    set_parent_process_id();
-    populate_default_nix_env_vars();
-    let config = config::Config::parse()?;
-    let uuid = utils::metrics::read_metrics_uuid(&config)
+// Use global variable to make it possible to access variables from
+// signal handler on Linux.
+static START_TIME: OnceCell<SystemTime> = OnceCell::new();
+static END_TIME: OnceCell<SystemTime> = OnceCell::new();
+
+async fn run(args: FloxArgs, config: config::Config) -> Result<()> {
+    let _ = init_global_manifest(&config.flox.config_dir.join("global-manifest.toml"));
+    args.handle(config).await?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+extern "C" fn handle_sigusr1(_: libc::c_int) {
+    let _ = END_TIME.set(SystemTime::now());
+}
+
+#[cfg(target_os = "linux")]
+fn wait_parent_pid(_pid: Pid) -> Result<()> {
+    // Linux uses PR_SET_PDEATHSIG to communicate parent death to child.
+    unsafe {
+        prctl(PR_SET_PDEATHSIG, SIGUSR1);
+    }
+    let sig_action = SigAction::new(
+        SigHandler::Handler(handle_sigusr1),
+        SaFlags::empty(),
+        SigSet::empty(),
+    );
+    if let Err(err) = unsafe { sigaction(SIGUSR1, &sig_action) } {
+        println!("[executive] sigaction() failed: {}", err);
+    };
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn wait_parent_pid(pid: Pid) -> Result<()> {
+    let mut watcher = kqueue::Watcher::new()?;
+    watcher.add_pid(
+        pid.into(),
+        kqueue::EventFilter::EVFILT_PROC,
+        kqueue::FilterFlag::NOTE_EXIT,
+    )?;
+    watcher.watch()?;
+    // The only event coming our way is the exit event for
+    // the parent pid, so just grab it and continue.
+    let _ = watcher.iter().next();
+    let _ = END_TIME.set(SystemTime::now());
+    Ok(())
+}
+
+fn spawn_executive(args: &FloxArgs, config: &config::Config) {
+    // Gather all config prior to forking (makes it easier
+    // to debug).
+    let flox_pid = getpid();
+    let uuid = utils::metrics::read_metrics_uuid(config)
         .map(|u| Some(u.to_string()))
         .unwrap_or(None);
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Parent { child, .. }) => {
+            debug!("forked executive with pid {}", child);
+            return;
+        },
+        Ok(ForkResult::Child) => {
+            // continue below
+        },
+        Err(err) => panic!("main: fork failed: {}", err),
+    };
+
+    // Assert we have in fact been forked.
+    assert_eq!(flox_pid, getppid());
+
+    // Reinitialize logging differently for executive(?).
+    // TODO: defer flox process logging init until after fork.
+    init_logger(Some(args.verbosity));
+
+    // Initialize sentry and metrics submission.
+    let _sentry_guard = init_sentry();
+    let _metrics_guard = Hub::global().try_guard().ok();
     sentry::configure_scope(|scope| {
         scope.set_user(Some(sentry::User {
             id: uuid,
             ..Default::default()
         }));
     });
-    init_global_manifest(&config.flox.config_dir.join("global-manifest.toml"))?;
-    args.handle(config).await?;
-    Ok(())
+
+    // wait for parent pid to die
+    // TODO: factor this out better.
+    debug!(
+        "[executive] my pid is {} I'm gonna wait for pid {} to die",
+        getpid(),
+        flox_pid
+    );
+
+    if let Err(err) = wait_parent_pid(flox_pid) {
+        println!("{:?}", err);
+    }
+
+    // Loop waiting for END_TIME to be set:
+    // - macos: it will be already be set by wait_parent_pid
+    // - linux: we're waiting for SIGUSR1 to set it for us
+    // It's fine to loop because it is not resource-intensive
+    // and this is an async metrics submission process anyway.
+    while END_TIME.get().is_none() {
+        sleep(Duration::from_millis(1000)); // Sleep to prevent busy waiting
+    }
+
+    // Compute and print the elapsed duration
+    if let (Some(start_time), Some(end_time)) = (START_TIME.get(), END_TIME.get()) {
+        match end_time.duration_since(*start_time) {
+            Ok(elapsed) => {
+                debug!("[executive] elapsed time: {:?}", elapsed);
+            },
+            Err(e) => {
+                eprintln!("Error calculating elapsed time: {:?}", e);
+            },
+        }
+    }
+    exit(0)
 }
 
 fn main() -> ExitCode {
+    START_TIME
+        .set(SystemTime::now())
+        .expect("START_TIME can only be set once");
+
     // initialize logger with "best guess" defaults
     // updating the logger conf is cheap, so we reinitialize whenever we get more information
     init_logger(None);
@@ -70,10 +182,11 @@ fn main() -> ExitCode {
             .unwrap_or_default()
     };
 
-    let _sentry_guard = init_sentry();
     init_logger(Some(verbosity));
-
-    let _metrics_guard = Hub::global().try_guard().ok();
+    let _ = set_user();
+    set_parent_process_id();
+    populate_default_nix_env_vars();
+    let config = config::Config::parse().unwrap();
 
     // Pass down the verbosity level to all pkgdb calls
     std::env::set_var(
@@ -114,10 +227,15 @@ fn main() -> ExitCode {
     // Errors handled above
     let FloxCli(args) = args.unwrap();
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    // Fork "executive" process responsible for metrics submission.
+    // N.B. we don't use threads for this so that all metrics submission
+    // is not involved in the straight-line execution of the flox command.
+    spawn_executive(&args, &config);
 
-    // Run flox. Print errors and exit with status 1 on failure
-    let exit_code = match runtime.block_on(run(args)) {
+    // Run flox subcommand in **foreground**. Interactive activate invocations
+    // will not return. Print errors and exit with status 1 on failure.
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let exit_code = match runtime.block_on(run(args, config)) {
         Ok(()) => ExitCode::from(0),
 
         Err(e) => {

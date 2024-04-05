@@ -61,3 +61,6 @@ tempfile.workspace = true
 [features]
 extra-tests = ["impure-unit-tests"]
 impure-unit-tests = []
+
+[target.'cfg(target_os = "macos")'.dependencies]
+kqueue = "1.0.8"

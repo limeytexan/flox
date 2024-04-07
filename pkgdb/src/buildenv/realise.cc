@@ -88,6 +88,19 @@ FLOX_ENV="$( dirname -- "${BASH_SOURCE[0]}" )"
 export FLOX_ENV
 FLOX_ACTIVATION_SCRIPTS_DIR="$FLOX_ENV/activate.d"
 
+# Process the flox environment customizations, which includes (amongst
+# other things) prepending this environment's bin directory to the PATH.
+if [ -d "$FLOX_ENV/etc/profile.d" ]; then
+  declare -a _prof_scripts;
+  _prof_scripts=( $(
+    cd "$FLOX_ENV/etc/profile.d";
+    shopt -s nullglob;
+    echo *.sh;
+  ) );
+  for p in "${_prof_scripts[@]}"; do . "$FLOX_ENV/etc/profile.d/$p"; done
+  unset _prof_scripts;
+fi
+
 # Set static environment variables from the manifest.
 if [ -f "$FLOX_ACTIVATION_SCRIPTS_DIR/envrc" ]; then
   source "$FLOX_ACTIVATION_SCRIPTS_DIR/envrc"
@@ -163,17 +176,6 @@ then
     source ~/.bashrc
 fi
 
-if [ -d "$FLOX_ENV/etc/profile.d" ]; then
-  declare -a _prof_scripts;
-  _prof_scripts=( $(
-    cd "$FLOX_ENV/etc/profile.d";
-    shopt -s nullglob;
-    echo *.sh;
-  ) );
-  for p in "${_prof_scripts[@]}"; do . "$FLOX_ENV/etc/profile.d/$p"; done
-  unset _prof_scripts;
-fi
-
 # Disable command hashing to allow for newly installed flox packages to be found
 # immediately.
 set +h
@@ -183,16 +185,6 @@ set +h
 // unlike bash, zsh activation calls this script from the user's shell rcfile
 const char * const ZSH_ACTIVATE_SCRIPT = R"(
 [ ${_FLOX_PKGDB_VERBOSITY:-0} -le 1 ] || set -x
-
-if [ -d "$FLOX_ENV/etc/profile.d" ]; then
-  declare -a _prof_scripts;
-  _prof_scripts=( $(
-    cd "$FLOX_ENV/etc/profile.d";
-    echo *.sh;
-  ) );
-  for p in "${_prof_scripts[@]}"; do . "$FLOX_ENV/etc/profile.d/$p"; done
-  unset _prof_scripts;
-fi
 
 # Disable command hashing to allow for newly installed flox packages to be found
 # immediately.

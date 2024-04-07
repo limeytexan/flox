@@ -553,7 +553,7 @@ impl Activate {
     }
 
     /// Used for `eval "$(flox activate)"`
-    fn activate_in_place(shell: &Shell, exports: &HashMap<&str, String>, activation_path: &Path) {
+    fn old_activate_in_place(shell: &Shell, exports: &HashMap<&str, String>, activation_path: &Path) {
         let exports_rendered = exports
             .iter()
             .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
@@ -575,6 +575,51 @@ impl Activate {
         };
 
         println!("{script}");
+    }
+
+    /// Used for `eval "$(flox activate)"`
+    fn activate_in_place(shell: &Shell, exports: &HashMap<&str, String>, activation_path: &Path) {
+
+        // Previous versions of pkgdb rendered activation scripts into a
+        // subdirectory called "activate", but now that path is occupied by
+        // the activation script itself. The new activation scripts are in a
+        // subdirectory called "activate.d". If we find that the "activate"
+        // path is a directory, we assume it's the old style and invoke the
+        // old_activate_in_place function.
+        let activate_path = activation_path.join("activate");
+        if activate_path.is_dir() {
+            return Self::old_activate_in_place(shell, exports, activation_path);
+        }
+
+        let mut command = Command::new(activate_path);
+        command.envs(exports);
+
+        // XXX BUG TODO: this is not correct, we need to know the value of
+        // $FLOX_SHELL in order to know the correct syntax for exporting
+        // variables in the local shell dialect. Turn this into a function
+        // that can do that.
+        let exports_rendered = exports
+            .iter()
+            .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
+            .map(|(key, value)| format!("export {key}={value}",))
+            .join("\n");
+
+        let script = formatdoc! {"
+            # Common flox environment variables
+            {exports_rendered}
+
+            # to avoid infinite recursion sourcing bashrc
+            export FLOX_SOURCED_FROM_SHELL_RC=1
+        "};
+
+        print!("{script}");
+
+        debug!("running activation command: {:?}", command);
+
+        // command prints remainder of script to STDOUT.
+        command.status().expect("failed to exec");
+
+        println!("unset FLOX_SOURCED_FROM_SHELL_RC");
     }
 
     /// Quote run args so that words don't get split,

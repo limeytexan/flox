@@ -115,7 +115,7 @@ elif [ -f "$FLOX_ACTIVATION_SCRIPTS_DIR/hook-script" ]; then
   source "$FLOX_ACTIVATION_SCRIPTS_DIR/hook-on-activate"
 fi
 
-# This is where the process diverges based on the activation mode:
+# This is where activation diverges based on the mode:
 
 # 1. "command" mode: simply exec the provided command and args
 if [ $# -gt 0 ]; then
@@ -147,18 +147,12 @@ if [ -t 1 ]; then
 fi
 
 # 3. "in-place" mode: emit activation commands in correct shell dialect
-# TODO: use Nix-provided cat or avoid cat altogether with bash builtins
 case "$FLOX_SHELL" in
-  *bash) exec cat "$FLOX_ACTIVATION_SCRIPTS_DIR/bash" ;;
-  *zsh) exec cat "$FLOX_ACTIVATION_SCRIPTS_DIR/zsh" ;;
-  *fish) exec cat "$FLOX_ACTIVATION_SCRIPTS_DIR/fish" ;;
-  *)
-    echo "Unsupported shell: $FLOX_SHELL" >&2
-    exit 1
-    ;;
+  *bash) echo "$( <"${FLOX_ACTIVATION_SCRIPTS_DIR}"/bash )" ;;
+  *zsh)  echo "$( <"${FLOX_ACTIVATION_SCRIPTS_DIR}"/zsh  )" ;;
+  *fish) echo "$( <"${FLOX_ACTIVATION_SCRIPTS_DIR}"/fish )" ;;
+  *)     echo "Unsupported shell: $FLOX_SHELL" >&2; exit 1  ;;
 esac
-
-# Not reached
 )_";
 
 /* We disable command hashing so a `flox install` will be reflected immediately

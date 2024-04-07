@@ -362,7 +362,7 @@ src/buildenv/realise.o: CXXFLAGS +=               \
 	'-DCOMMON_NIXPKGS_URL="$(COMMON_NIXPKGS_URL)"'
 
 src/buildenv/realise.o: CXXFLAGS +=               \
-	'-DFLOX_BASH_BIN="$(FLOX_BASH_BIN)"'
+	'-DFLOX_BASH="$(FLOX_BASH)"'
 
 # Only needed for main.cc
 CXXFLAGS += '-DNIXPKGS_CACERT_BUNDLE_CRT="$(NIXPKGS_CACERT_BUNDLE_CRT)"'

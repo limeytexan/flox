@@ -34,8 +34,22 @@ mod utils;
 static START_TIME: OnceCell<SystemTime> = OnceCell::new();
 static END_TIME: OnceCell<SystemTime> = OnceCell::new();
 
-async fn run(args: FloxArgs, config: config::Config) -> Result<()> {
-    let _ = init_global_manifest(&config.flox.config_dir.join("global-manifest.toml"));
+async fn run(args: FloxArgs) -> Result<()> {
+    init_logger(Some(args.verbosity));
+    set_user()?;
+    set_parent_process_id();
+    populate_default_nix_env_vars();
+    let config = config::Config::parse()?;
+    let uuid = utils::metrics::read_metrics_uuid(&config)
+        .map(|u| Some(u.to_string()))
+        .unwrap_or(None);
+    sentry::configure_scope(|scope| {
+        scope.set_user(Some(sentry::User {
+            id: uuid,
+            ..Default::default()
+        }));
+    });
+    init_global_manifest(&config.flox.config_dir.join("global-manifest.toml"))?;
     args.handle(config).await?;
     Ok(())
 }
@@ -182,11 +196,10 @@ fn main() -> ExitCode {
             .unwrap_or_default()
     };
 
+    let _sentry_guard = init_sentry();
     init_logger(Some(verbosity));
-    let _ = set_user();
-    set_parent_process_id();
-    populate_default_nix_env_vars();
-    let config = config::Config::parse().unwrap();
+
+    let _metrics_guard = Hub::global().try_guard().ok();
 
     // Pass down the verbosity level to all pkgdb calls
     std::env::set_var(
@@ -230,12 +243,12 @@ fn main() -> ExitCode {
     // Fork "executive" process responsible for metrics submission.
     // N.B. we don't use threads for this so that all metrics submission
     // is not involved in the straight-line execution of the flox command.
-    spawn_executive(&args, &config);
+    // spawn_executive(&args, &config);
 
-    // Run flox subcommand in **foreground**. Interactive activate invocations
-    // will not return. Print errors and exit with status 1 on failure.
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let exit_code = match runtime.block_on(run(args, config)) {
+
+    // Run flox. Print errors and exit with status 1 on failure
+    let exit_code = match runtime.block_on(run(args)) {
         Ok(()) => ExitCode::from(0),
 
         Err(e) => {

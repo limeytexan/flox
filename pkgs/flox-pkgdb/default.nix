@@ -92,8 +92,8 @@
       path = ../../pkgdb/src/buildenv/assets/mkContainer.nix;
     };
 
-    # The Bash executable to use for `hook.on-activate`
-    FLOX_BASH_BIN = "${bash}/bin/bash";
+    # The Bash package providing the bash used for `hook.on-activate`.
+    FLOX_BASH = bash;
 
     # used so that `nix` calls that require an SSL cert don't fail
     NIXPKGS_CACERT_BUNDLE_CRT =

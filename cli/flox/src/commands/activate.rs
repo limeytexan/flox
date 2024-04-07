@@ -68,6 +68,46 @@ pub struct Activate {
     run_args: Vec<String>,
 }
 
+/* https://github.com/flox/flox/issues/1187
+ *
+ * Thinking about my response to #1176 it dawned on me that there are parallels
+ * to be drawn between `flox activate` and the distinct stages of the Linux
+ * boot process. There are two properties of the Linux boot stages that I think
+ * are particularly relevant here:
+ *
+ * 1. each stage is responsible for preparing state used by the stage to follow
+ * 2. as each stage cedes control to the next, it does so by _replacing_ itself
+ *    with the next stage (i.e. `kexec`)
+ *
+ * It would be helpful to organise our thinking with these same properties in
+ * mind, and applying these concepts to the various modes of `flox activate` we
+ * have these "stages" to work with:
+ *
+ * Stage 1: the (rust) `flox` CLI itself
+ *     i. sets nix/flox-related constants in environment (e.g. `FLOX_VERSION`, `NIX_SSL_CERT_FILE`, etc.)
+ *    ii. sets _dynamic_ env-specific variables `PATH`, `FLOX_ENV`, etc. that are only known known at activation time
+ *   iii. locates (or creates) bash script (stored in the environment itself) for use with "stage 2" which:
+ *         a. adds [bash] commands to set _static_ env-specific variables
+ *         b. appends the user-specified `[hook.on-activate]` section from the manifest
+ *    iv. locates (or creates) "profile" scripts (stored in the environment itself) for _all known shell dialects_ to be used in "stage 3"
+ *         a. adds commands to set prompt & aliases, disable hashing, or whatever else is required for each supported userShell
+ *         b. appends user-specified `[profile.common]` section from the manifest
+ *         c. appends user-specified `[profile.<userShell>]` section from the manifest
+ *     v. finishes by `exec`ing the "stage 2" bash script (using a _flox-provided_ bash `<nixShell>`) which inherits the environment from above
+ *
+ * Stage 2: a script invoked by `bash`
+ *     i. _if environment isn't already active_, runs commands to prepare environment, invokes user-provided hook (written in bash) as noted in **1.iii** above
+ *    ii. finishes by `exec`ing the "stage 3" command to be invoked, see below
+ *
+ * Stage 3: things get different depending on the activation mode and the userShell
+ *     i. "interactive": invoke `exec <userShell> <args>` with args that:
+ *         a. defeat any sourcing of user-specific "dotfiles" that might mess things up (e.g. bash has a `--norc` option that is useful here)
+ *             * note that flox will have inherited an environment from the "login" shell (or descendent) from which it is invoked, so there should be no downside to skipping this user-specific initialisation
+ *         b. sources the appropriate language script created in step **1.iv** above
+ *    ii. "in-place": outputs the appropriate script in the dialect of the userShell created in step **1.iv** above and exits
+ *   iii. "command" mode: simply invoke `exec <cmd> <args>` as supplied by the user
+ *         * **N.B.** no need to involve **userShell** in this mode at all
+ */
 impl Activate {
     pub async fn handle(self, mut config: Config, flox: Flox) -> Result<()> {
         subcommand_metric!("activate");

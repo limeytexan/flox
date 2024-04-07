@@ -24,14 +24,14 @@ setup_file() {
 project_setup() {
   export PROJECT_DIR="${BATS_TEST_TMPDIR?}/project-${BATS_TEST_NUMBER?}"
   export PROJECT_NAME="${PROJECT_DIR##*/}"
-  rm -rf "$PROJECT_DIR"
+  # rm -rf "$PROJECT_DIR"
   mkdir -p "$PROJECT_DIR"
   pushd "$PROJECT_DIR" >/dev/null || return
 }
 
 project_teardown() {
   popd >/dev/null || return
-  rm -rf "${PROJECT_DIR?}"
+  # rm -rf "${PROJECT_DIR?}"
   unset PROJECT_DIR
   unset PROJECT_NAME
 }
@@ -61,7 +61,7 @@ teardown() {
   assert_output --partial "✅ 'pip' installed to environment"
   assert_output --partial "✅ 'python3' installed to environment"
 
-  FLOX_SHELL=bash "$FLOX_BIN" activate -- source "$TESTS_DIR/python/requests-with-pip.sh"
+  FLOX_SHELL=bash "$FLOX_BIN" activate -- bash "$TESTS_DIR/python/requests-with-pip.sh"
 }
 
 # ---------------------------------------------------------------------------- #

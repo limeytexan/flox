@@ -319,7 +319,6 @@ impl Activate {
         exports: HashMap<&str, String>,
         activation_path: PathBuf,
     ) -> Result<()> {
-
         // Previous versions of pkgdb rendered activation scripts into a
         // subdirectory called "activate", but now that path is occupied by
         // the activation script itself. The new activation scripts are in a
@@ -405,7 +404,6 @@ impl Activate {
         Err(command.exec().into())
     }
 
-
     /// Activate the environment interactively by spawning a new shell
     /// and running the respective activation scripts.
     ///
@@ -416,7 +414,6 @@ impl Activate {
         activation_path: PathBuf,
         now_active: UninitializedEnvironment,
     ) -> Result<()> {
-
         // Previous versions of pkgdb rendered activation scripts into a
         // subdirectory called "activate", but now that path is occupied by
         // the activation script itself. The new activation scripts are in a
@@ -553,7 +550,11 @@ impl Activate {
     }
 
     /// Used for `eval "$(flox activate)"`
-    fn old_activate_in_place(shell: &Shell, exports: &HashMap<&str, String>, activation_path: &Path) {
+    fn old_activate_in_place(
+        shell: &Shell,
+        exports: &HashMap<&str, String>,
+        activation_path: &Path,
+    ) {
         let exports_rendered = exports
             .iter()
             .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
@@ -579,7 +580,6 @@ impl Activate {
 
     /// Used for `eval "$(flox activate)"`
     fn activate_in_place(shell: &Shell, exports: &HashMap<&str, String>, activation_path: &Path) {
-
         // Previous versions of pkgdb rendered activation scripts into a
         // subdirectory called "activate", but now that path is occupied by
         // the activation script itself. The new activation scripts are in a

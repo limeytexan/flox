@@ -27,6 +27,8 @@
   bats,
   git,
   coreutils,
+  gnused,
+  procps,
   parallel,
   llvm, # for `llvm-symbolizer'
   gdb ? throw "`gdb' is required for debugging with `g++'",
@@ -92,8 +94,11 @@
       path = ../../pkgdb/src/buildenv/assets/mkContainer.nix;
     };
 
-    # The Bash executable to use for `hook.on-activate`
-    FLOX_BASH_BIN = "${bash}/bin/bash";
+    # Packages required for the (bash) activate script.
+    FLOX_BASH_PKG = bash;
+    FLOX_COREUTILS_PKG = coreutils;
+    FLOX_GNUSED_PKG = gnused;
+    FLOX_PROCPS_PKG = procps;
 
     # used so that `nix` calls that require an SSL cert don't fail
     NIXPKGS_CACERT_BUNDLE_CRT =

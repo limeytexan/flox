@@ -93,7 +93,7 @@
     };
 
     # The Bash package providing the bash used for `hook.on-activate`.
-    FLOX_BASH = bash;
+    FLOX_BASH_PKG = bash;
 
     # used so that `nix` calls that require an SSL cert don't fail
     NIXPKGS_CACERT_BUNDLE_CRT =

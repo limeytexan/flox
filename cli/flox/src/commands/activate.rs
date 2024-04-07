@@ -68,46 +68,6 @@ pub struct Activate {
     run_args: Vec<String>,
 }
 
-/* https://github.com/flox/flox/issues/1187
- *
- * Thinking about my response to #1176 it dawned on me that there are parallels
- * to be drawn between `flox activate` and the distinct stages of the Linux
- * boot process. There are two properties of the Linux boot stages that I think
- * are particularly relevant here:
- *
- * 1. each stage is responsible for preparing state used by the stage to follow
- * 2. as each stage cedes control to the next, it does so by _replacing_ itself
- *    with the next stage (i.e. `kexec`)
- *
- * It would be helpful to organise our thinking with these same properties in
- * mind, and applying these concepts to the various modes of `flox activate` we
- * have these "stages" to work with:
- *
- * Stage 1: the (rust) `flox` CLI itself
- *     i. sets nix/flox-related constants in environment (e.g. `FLOX_VERSION`, `NIX_SSL_CERT_FILE`, etc.)
- *    ii. sets _dynamic_ env-specific variables `PATH`, `FLOX_ENV`, etc. that are only known known at activation time
- *   iii. locates (or creates) bash script (stored in the environment itself) for use with "stage 2" which:
- *         a. adds [bash] commands to set _static_ env-specific variables
- *         b. appends the user-specified `[hook.on-activate]` section from the manifest
- *    iv. locates (or creates) "profile" scripts (stored in the environment itself) for _all known shell dialects_ to be used in "stage 3"
- *         a. adds commands to set prompt & aliases, disable hashing, or whatever else is required for each supported userShell
- *         b. appends user-specified `[profile.common]` section from the manifest
- *         c. appends user-specified `[profile.<userShell>]` section from the manifest
- *     v. finishes by `exec`ing the "stage 2" bash script (using a _flox-provided_ bash `<nixShell>`) which inherits the environment from above
- *
- * Stage 2: a script invoked by `bash`
- *     i. _if environment isn't already active_, runs commands to prepare environment, invokes user-provided hook (written in bash) as noted in **1.iii** above
- *    ii. finishes by `exec`ing the "stage 3" command to be invoked, see below
- *
- * Stage 3: things get different depending on the activation mode and the userShell
- *     i. "interactive": invoke `exec <userShell> <args>` with args that:
- *         a. defeat any sourcing of user-specific "dotfiles" that might mess things up (e.g. bash has a `--norc` option that is useful here)
- *             * note that flox will have inherited an environment from the "login" shell (or descendent) from which it is invoked, so there should be no downside to skipping this user-specific initialisation
- *         b. sources the appropriate language script created in step **1.iv** above
- *    ii. "in-place": outputs the appropriate script in the dialect of the userShell created in step **1.iv** above and exits
- *   iii. "command" mode: simply invoke `exec <cmd> <args>` as supplied by the user
- *         * **N.B.** no need to involve **userShell** in this mode at all
- */
 impl Activate {
     pub async fn handle(self, mut config: Config, flox: Flox) -> Result<()> {
         subcommand_metric!("activate");
@@ -318,7 +278,7 @@ impl Activate {
     }
 
     /// Used for `flox activate -- run_args`
-    fn activate_command(
+    fn old_activate_command(
         run_args: Vec<String>,
         shell: Shell,
         exports: HashMap<&str, String>,
@@ -352,6 +312,100 @@ impl Activate {
         Err(command.exec().into())
     }
 
+    /// Used for `flox activate -- run_args`
+    fn activate_command(
+        run_args: Vec<String>,
+        shell: Shell,
+        exports: HashMap<&str, String>,
+        activation_path: PathBuf,
+    ) -> Result<()> {
+
+        // Previous versions of pkgdb rendered activation scripts into a
+        // subdirectory called "activate", but now that path is occupied by
+        // the activation script itself. The new activation scripts are in a
+        // subdirectory called "activate.d". If we find that the "activate"
+        // path is a directory, we assume it's the old style and invoke the
+        // old_activate_command function.
+        let activate_path = activation_path.join("activate");
+        if activate_path.is_dir() {
+            return Self::old_activate_command(run_args, shell, exports, activation_path);
+        }
+
+        let mut command = Command::new(activate_path);
+        command.args(run_args);
+        command.envs(exports);
+
+        debug!("running activation command: {:?}", command);
+
+        // exec should never return
+        Err(command.exec().into())
+    }
+
+    /// Activate the environment interactively by spawning a new shell
+    /// and running the respective activation scripts.
+    ///
+    /// This function should never return as it replaces the current process
+    fn old_activate_interactive(
+        shell: Shell,
+        exports: HashMap<&str, String>,
+        activation_path: PathBuf,
+        now_active: UninitializedEnvironment,
+    ) -> Result<()> {
+        let mut command = Command::new(shell.exe_path());
+        command.envs(exports);
+
+        match shell {
+            Shell::Bash(_) => {
+                command
+                    .arg("--rcfile")
+                    .arg(activation_path.join("activate").join("bash"));
+            },
+            Shell::Zsh(_) => {
+                // From man zsh:
+                // Commands are then read from $ZDOTDIR/.zshenv.  If the shell is a
+                // login shell, commands are read from /etc/zprofile and then
+                // $ZDOTDIR/.zprofile.  Then, if the shell is interactive, commands
+                // are read from /etc/zshrc and then $ZDOTDIR/.zshrc.  Finally, if
+                // the shell is a login shell, /etc/zlogin and $ZDOTDIR/.zlogin are
+                // read.
+                //
+                // We want to add our customizations as late as possible in the
+                // initialization process - if, e.g. the user has prompt
+                // customizations, we want ours to go last. So we put our
+                // customizations at the end of .zshrc, passing our customizations
+                // using FLOX_ZSH_INIT_SCRIPT.
+                // Otherwise, we want initialization to proceed as normal, so the
+                // files in our ZDOTDIR source global rcs and user rcs.
+                // We disable global rc files and instead source them manually so we
+                // can control the ZDOTDIR they are run with - this is important
+                // since macOS sets
+                // HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
+                // in /etc/zshrc.
+                if let Ok(zdotdir) = env::var("ZDOTDIR") {
+                    command.env("FLOX_ORIG_ZDOTDIR", zdotdir);
+                }
+                command
+                    .env("ZDOTDIR", env!("FLOX_ZDOTDIR"))
+                    .env(
+                        "FLOX_ZSH_INIT_SCRIPT",
+                        activation_path.join("activate").join("zsh"),
+                    )
+                    .arg("--no-globalrcs");
+            },
+        };
+
+        debug!("running activation command: {:?}", command);
+
+        let message = formatdoc! {"
+                You are now using the environment {}.
+                To stop using this environment, type 'exit'\n", now_active.message_description()?};
+        message::updated(message);
+
+        // exec should never return
+        Err(command.exec().into())
+    }
+
+
     /// Activate the environment interactively by spawning a new shell
     /// and running the respective activation scripts.
     ///
@@ -362,7 +416,19 @@ impl Activate {
         activation_path: PathBuf,
         now_active: UninitializedEnvironment,
     ) -> Result<()> {
-        let mut command = Command::new(activation_path.join("activate"));
+
+        // Previous versions of pkgdb rendered activation scripts into a
+        // subdirectory called "activate", but now that path is occupied by
+        // the activation script itself. The new activation scripts are in a
+        // subdirectory called "activate.d". If we find that the "activate"
+        // path is a directory, we assume it's the old style and invoke the
+        // old_activate_interactive function.
+        let activate_path = activation_path.join("activate");
+        if activate_path.is_dir() {
+            return Self::old_activate_interactive(shell, exports, activation_path, now_active);
+        }
+
+        let mut command = Command::new(activate_path);
         command.envs(exports);
 
         debug!("running activation command: {:?}", command);

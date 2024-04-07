@@ -60,8 +60,8 @@ namespace flox::buildenv {
 #  error "COMMON_NIXPKGS_URL must be set to a locked flakeref of nixpkgs to use"
 #endif
 
-#ifndef FLOX_BASH
-#  error "FLOX_BASH must be set to the path of the nix bash package"
+#ifndef FLOX_BASH_PKG
+#  error "FLOX_BASH_PKG must be set to the path of the nix bash package"
 #endif
 
 /* -------------------------------------------------------------------------- */
@@ -103,19 +103,16 @@ elif [ -f "$FLOX_ACTIVATION_SCRIPTS_DIR/hook-script" ]; then
 fi
 
 # This is where the process diverges based on the activation mode:
-# 1. "command" mode: run a command using the environment.
-# 2. "interactive" mode: start an interactive shell with the environment.
-# 3. "in-place" mode: use the user's shell dialect to emit commands to activate
 
 # 1. "command" mode: simply exec the provided command and args
-if [ $# -eq 0 ]; then
+if [ $# -gt 0 ]; then
   exec "$@"
 fi
 
-# "interactive" mode: invoke the user's shell with args that:
-#   1. defeat the shell's normal startup scripts
-#   2. source the relevant activation script
-if [ -t 0 ]; then
+# 2. "interactive" mode: invoke the user's shell with args that:
+#   a. defeat the shell's normal startup scripts
+#   b. source the relevant activation script
+if [ -t 1 ]; then
   case "$FLOX_SHELL" in
     *bash)
       exec "$FLOX_SHELL" --rcfile "$FLOX_ACTIVATION_SCRIPTS_DIR/bash"
@@ -136,7 +133,7 @@ if [ -t 0 ]; then
   esac
 fi
 
-# "in-place" mode: simply emit activation commands using the user's shell dialect
+# 3. "in-place" mode: emit activation commands in correct shell dialect
 # TODO: use Nix-provided cat or avoid cat altogether with bash builtins
 case "$FLOX_SHELL" in
   *bash) exec cat "$FLOX_ACTIVATION_SCRIPTS_DIR/bash" ;;
@@ -731,7 +728,7 @@ addActivationScript( const std::filesystem::path & tempDir )
     {
       throw ActivationScriptBuildFailure( std::string( strerror( errno ) ) );
     }
-  scriptTmpFile << "#!" << FLOX_BASH << "/bin/bash" << std::endl;
+  scriptTmpFile << "#!" << FLOX_BASH_PKG << "/bin/bash" << std::endl;
   scriptTmpFile << ACTIVATE_SCRIPT;
   if ( scriptTmpFile.fail() )
     {
@@ -920,7 +917,7 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
   references.insert( activationStorePath );
   references.insert( state.store->parseStorePath( SET_PROMPT_BASH_SH ) );
   references.insert( state.store->parseStorePath( SET_PROMPT_ZSH_SH ) );
-  references.insert( state.store->parseStorePath( FLOX_BASH ) );
+  references.insert( state.store->parseStorePath( FLOX_BASH_PKG ) );
 
   return { realised, references };
 }

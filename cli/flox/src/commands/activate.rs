@@ -362,48 +362,8 @@ impl Activate {
         activation_path: PathBuf,
         now_active: UninitializedEnvironment,
     ) -> Result<()> {
-        let mut command = Command::new(shell.exe_path());
+        let mut command = Command::new(activation_path.join("activate"));
         command.envs(exports);
-
-        match shell {
-            Shell::Bash(_) => {
-                command
-                    .arg("--rcfile")
-                    .arg(activation_path.join("activate").join("bash"));
-            },
-            Shell::Zsh(_) => {
-                // From man zsh:
-                // Commands are then read from $ZDOTDIR/.zshenv.  If the shell is a
-                // login shell, commands are read from /etc/zprofile and then
-                // $ZDOTDIR/.zprofile.  Then, if the shell is interactive, commands
-                // are read from /etc/zshrc and then $ZDOTDIR/.zshrc.  Finally, if
-                // the shell is a login shell, /etc/zlogin and $ZDOTDIR/.zlogin are
-                // read.
-                //
-                // We want to add our customizations as late as possible in the
-                // initialization process - if, e.g. the user has prompt
-                // customizations, we want ours to go last. So we put our
-                // customizations at the end of .zshrc, passing our customizations
-                // using FLOX_ZSH_INIT_SCRIPT.
-                // Otherwise, we want initialization to proceed as normal, so the
-                // files in our ZDOTDIR source global rcs and user rcs.
-                // We disable global rc files and instead source them manually so we
-                // can control the ZDOTDIR they are run with - this is important
-                // since macOS sets
-                // HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
-                // in /etc/zshrc.
-                if let Ok(zdotdir) = env::var("ZDOTDIR") {
-                    command.env("FLOX_ORIG_ZDOTDIR", zdotdir);
-                }
-                command
-                    .env("ZDOTDIR", env!("FLOX_ZDOTDIR"))
-                    .env(
-                        "FLOX_ZSH_INIT_SCRIPT",
-                        activation_path.join("activate").join("zsh"),
-                    )
-                    .arg("--no-globalrcs");
-            },
-        };
 
         debug!("running activation command: {:?}", command);
 

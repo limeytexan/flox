@@ -69,7 +69,7 @@ namespace flox::buildenv {
 // Top-level activate script, always invoked with nix bash.
 const char * const ACTIVATE_SCRIPT = R"_(
 # Flox environment activation script.
-set -x
+[ ${_FLOX_PKGDB_VERBOSITY:-0} -eq 0 ] || set -x
 
 # Start by identifying the shell listening on STDOUT. This is usually just
 # the parent PID, but in the case of direnv can be something a few steps up
@@ -157,6 +157,8 @@ esac
  * in case it's used in the prior scripts (e.g. ~/.bashrc).
  */
 const char * const BASH_ACTIVATE_SCRIPT = R"(
+[ ${_FLOX_PKGDB_VERBOSITY:-0} -le 1 ] || set -x
+
 # We use --rcfile to activate using bash which skips sourcing ~/.bashrc,
 # so source that here.
 if [ -f ~/.bashrc -a "${FLOX_SOURCED_FROM_SHELL_RC:-}" != 1 ]
@@ -167,10 +169,11 @@ fi
 if [ -d "$FLOX_ENV/etc/profile.d" ]; then
   declare -a _prof_scripts;
   _prof_scripts=( $(
+    cd "$FLOX_ENV/etc/profile.d";
     shopt -s nullglob;
-    echo "$FLOX_ENV/etc/profile.d"/*.sh;
+    echo *.sh;
   ) );
-  for p in "${_prof_scripts[@]}"; do . "$p"; done
+  for p in "${_prof_scripts[@]}"; do . "$FLOX_ENV/etc/profile.d/$p"; done
   unset _prof_scripts;
 fi
 
@@ -182,12 +185,15 @@ set +h
 
 // unlike bash, zsh activation calls this script from the user's shell rcfile
 const char * const ZSH_ACTIVATE_SCRIPT = R"(
+[ ${_FLOX_PKGDB_VERBOSITY:-0} -le 1 ] || set -x
+
 if [ -d "$FLOX_ENV/etc/profile.d" ]; then
   declare -a _prof_scripts;
   _prof_scripts=( $(
-    echo "$FLOX_ENV/etc/profile.d"/*.sh;
+    cd "$FLOX_ENV/etc/profile.d";
+    echo *.sh;
   ) );
-  for p in "${_prof_scripts[@]}"; do . "$p"; done
+  for p in "${_prof_scripts[@]}"; do . "$FLOX_ENV/etc/profile.d/$p"; done
   unset _prof_scripts;
 fi
 

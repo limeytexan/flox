@@ -86,7 +86,6 @@ FLOX_SHELL="${FLOX_SHELL:-${SHELL}}"
 # activation scripts directory.
 FLOX_ENV="$( dirname -- "${BASH_SOURCE[0]}" )"
 export FLOX_ENV
-FLOX_ACTIVATION_SCRIPTS_DIR="$FLOX_ENV/activate.d"
 
 # Process the flox environment customizations, which includes (amongst
 # other things) prepending this environment's bin directory to the PATH.
@@ -102,24 +101,30 @@ if [ -d "$FLOX_ENV/etc/profile.d" ]; then
 fi
 
 # Set static environment variables from the manifest.
-if [ -f "$FLOX_ACTIVATION_SCRIPTS_DIR/envrc" ]; then
-  source "$FLOX_ACTIVATION_SCRIPTS_DIR/envrc"
+if [ -f "$FLOX_ENV/activate.d/envrc" ]; then
+  source "$FLOX_ENV/activate.d/envrc"
 fi
 
 # Source the hook-on-activate script if it exists.
-if [ -f "$FLOX_ACTIVATION_SCRIPTS_DIR/hook-on-activate" ]; then
-  source "$FLOX_ACTIVATION_SCRIPTS_DIR/hook-on-activate"
-elif [ -f "$FLOX_ACTIVATION_SCRIPTS_DIR/hook-script" ]; then
+if [ -e "$FLOX_ENV/activate.d/hook-on-activate" ]; then
+  source "$FLOX_ENV/activate.d/hook-on-activate"
+elif [ -e "$FLOX_ENV/activate.d/hook-script" ]; then
   # [hook.script] is deprecated - print warning and source it.
   echo "WARNING: [hook.script] is deprecated. Use [hook.on-activate] instead." >&2
-  source "$FLOX_ACTIVATION_SCRIPTS_DIR/hook-on-activate"
+  source "$FLOX_ENV/activate.d/hook-on-activate"
 fi
 
 # This is where activation diverges based on the mode:
 
 # 1. "command" mode: simply exec the provided command and args
 if [ $# -gt 0 ]; then
-  exec "$@"
+  # The colon is a no-op command that returns true so don't
+  # attempt to execute it as a command.
+  if [ "$1" = ":" ]; then
+    exit 0
+  else
+    exec "$@"
+  fi
 fi
 
 # 2. "interactive" mode: invoke the user's shell with args that:
@@ -128,16 +133,16 @@ fi
 if [ -t 1 ]; then
   case "$FLOX_SHELL" in
     *bash)
-      exec "$FLOX_SHELL" --rcfile "$FLOX_ACTIVATION_SCRIPTS_DIR/bash"
+      exec "$FLOX_SHELL" --rcfile "$FLOX_ENV/activate.d/bash"
       ;;
     *zsh)
       export ZDOTDIR="$FLOX_ZDOTDIR"
-      export FLOX_ZSH_INIT_SCRIPT="$FLOX_ACTIVATION_SCRIPTS_DIR/zsh"
+      export FLOX_ZSH_INIT_SCRIPT="$FLOX_ENV/activate.d/zsh"
       exec "$FLOX_SHELL"
       ;;
     *fish)
       # TODO: test fish support
-      exec "$FLOX_SHELL" "$FLOX_ACTIVATION_SCRIPTS_DIR/fish"
+      exec "$FLOX_SHELL" "$FLOX_ENV/activate.d/fish"
       ;;
     *)
       echo "Unsupported shell: $FLOX_SHELL" >&2
@@ -148,9 +153,9 @@ fi
 
 # 3. "in-place" mode: emit activation commands in correct shell dialect
 case "$FLOX_SHELL" in
-  *bash) echo "$( <"${FLOX_ACTIVATION_SCRIPTS_DIR}"/bash )" ;;
-  *zsh)  echo "$( <"${FLOX_ACTIVATION_SCRIPTS_DIR}"/zsh  )" ;;
-  *fish) echo "$( <"${FLOX_ACTIVATION_SCRIPTS_DIR}"/fish )" ;;
+  *bash) echo "$( <"$FLOX_ENV/activate.d/bash" )" ;;
+  *zsh)  echo "$( <"$FLOX_ENV/activate.d/zsh"  )" ;;
+  *fish) echo "$( <"$FLOX_ENV/activate.d/fish" )" ;;
   *)     echo "Unsupported shell: $FLOX_SHELL" >&2; exit 1  ;;
 esac
 )_";

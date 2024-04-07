@@ -24,14 +24,14 @@ setup_file() {
 project_setup() {
   export PROJECT_DIR="${BATS_TEST_TMPDIR?}/project-${BATS_TEST_NUMBER?}"
   export PROJECT_NAME="${PROJECT_DIR##*/}"
-  rm -rf "$PROJECT_DIR"
+  # rm -rf "$PROJECT_DIR"
   mkdir -p "$PROJECT_DIR"
   pushd "$PROJECT_DIR" >/dev/null || return
 }
 
 project_teardown() {
   popd >/dev/null || return
-  rm -rf "${PROJECT_DIR?}"
+  # rm -rf "${PROJECT_DIR?}"
   unset PROJECT_DIR
   unset PROJECT_NAME
 }

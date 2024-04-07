@@ -39,21 +39,27 @@ EOF
     cat <<- EOF
 [profile]
 common = """
-  echo "Welcome to your flox environment!";
+  echo "sourcing profile.common";
+"""
+bash = """
+  echo "sourcing profile.bash";
+"""
+zsh = """
+  echo "sourcing profile.zsh";
 """
 EOF
   )
 
-  export VARS_PROFILE_SCRIPT=$(
+  export VARS_HOOK_SCRIPT=$(
     cat << EOF
-[profile]
-common = """
+[hook]
+on-activate = """
   echo \$foo;
 """
 EOF
   )
 
-  rm -rf "$PROJECT_DIR"
+  # rm -rf "$PROJECT_DIR"
   mkdir -p "$PROJECT_DIR"
   pushd "$PROJECT_DIR" > /dev/null || return
   "$FLOX_BIN" init -d "$PROJECT_DIR"
@@ -61,7 +67,7 @@ EOF
 
 project_teardown() {
   popd > /dev/null || return
-  rm -rf "${PROJECT_DIR?}"
+  # rm -rf "${PROJECT_DIR?}"
   unset PROJECT_DIR
   unset PROJECT_NAME
 }
@@ -130,21 +136,30 @@ env_is_activated() {
 
 # ---------------------------------------------------------------------------- #
 # bats test_tags=activate,activate:hook:bash
-@test "bash: activate runs 'profile.common'" {
+@test "bash: activate runs profile scripts" {
   # calls init
   sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
 
   FLOX_SHELL=bash NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/hook.exp" "$PROJECT_DIR"
-  assert_output --partial "Welcome to your flox environment!"
+  assert_success
+  assert_output --partial "sourcing profile.common"
+  assert_output --partial "sourcing profile.bash"
+  refute_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
 
   FLOX_SHELL=bash USER="$REAL_USER" NO_COLOR=1 run $FLOX_BIN activate --dir "$PROJECT_DIR" -- :
   assert_success
-  assert_output --partial "Welcome to your flox environment!"
+  refute_output --partial "sourcing profile.common"
+  refute_output --partial "sourcing profile.bash"
+  refute_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
 }
 
 # ---------------------------------------------------------------------------- #
 # bats test_tags=activate,activate:hook:zsh
-@test "zsh: activate runs 'profile.common'" {
+@test "zsh: activate runs profile scripts" {
   sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
 
   # TODO: flox will set HOME if it doesn't match the home of the user with
@@ -152,11 +167,19 @@ env_is_activated() {
   # USER to REAL_USER.
   # FLOX_SHELL=zsh USER="$REAL_USER" run -0 bash -c "echo exit | $FLOX_CLI activate --dir $PROJECT_DIR";
   FLOX_SHELL=zsh USER="$REAL_USER" NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/hook.exp" "$PROJECT_DIR"
-  assert_output --partial "Welcome to your flox environment!"
+  assert_output --partial "sourcing profile.common"
+  refute_output --partial "sourcing profile.bash"
+  assert_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
 
   FLOX_SHELL=zsh USER="$REAL_USER" NO_COLOR=1 run $FLOX_BIN activate --dir "$PROJECT_DIR" -- :
   assert_success
-  assert_output --partial "Welcome to your flox environment!"
+  refute_output --partial "sourcing profile.common"
+  refute_output --partial "sourcing profile.bash"
+  refute_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
 }
 
 # ---------------------------------------------------------------------------- #
@@ -190,7 +213,7 @@ env_is_activated() {
   FLOX_SHELL=bash NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/envVar.exp" "$PROJECT_DIR"
   assert_output --partial "baz"
 
-  FLOX_SHELL=bash NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- echo '$foo'
+  FLOX_SHELL=bash NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- sh -c 'echo $foo'
   assert_success
   assert_output --partial "baz"
 }
@@ -207,7 +230,7 @@ env_is_activated() {
   FLOX_SHELL=zsh USER="$REAL_USER" NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/envVar.exp" "$PROJECT_DIR"
   assert_output --partial "baz"
 
-  FLOX_SHELL=zsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- echo '$foo'
+  FLOX_SHELL=zsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- zsh -c 'echo $foo'
   assert_success
   assert_output --partial "baz"
 }
@@ -217,15 +240,15 @@ env_is_activated() {
 # bats test_tags=activate,activate:envVar-before-hook:zsh
 @test "zsh and bash: activate sets env var before hook" {
   sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
-  sed -i -e "s/^\[profile\]/${VARS_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  sed -i -e "s/^\[hook\]/${VARS_HOOK_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
 
   # TODO: flox will set HOME if it doesn't match the home of the user with
   # current euid. I'm not sure if we should change that, but for now just set
   # USER to REAL_USER.
-  FLOX_SHELL=zsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- exit
+  FLOX_SHELL=zsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
   assert_success
   assert_output --partial "baz"
-  FLOX_SHELL=bash NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- exit
+  FLOX_SHELL=bash NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
   assert_success
   assert_output --partial "baz"
 }
@@ -263,7 +286,7 @@ env_is_activated() {
   assert_success
   # check that env vars are set for compatibility with nix built software
   assert_line --partial "export NIX_SSL_CERT_FILE="
-  assert_output --regexp "source .*/activate/bash"
+  assert_output --regexp "Disable command hashing"
 }
 
 # bats test_tags=activate,activate:inplace-prints
@@ -272,7 +295,7 @@ env_is_activated() {
   assert_success
   # check that env vars are set for compatibility with nix built software
   assert_line --partial "export NIX_SSL_CERT_FILE="
-  assert_output --regexp "source .*/activate/zsh"
+  assert_output --regexp "Disable command hashing"
 }
 
 # bats test_tags=activate,activate:inplace-modifies
@@ -287,7 +310,7 @@ env_is_activated() {
   run bash -c 'eval "$("$FLOX_BIN" activate)"; type hello; echo $foo'
   assert_success
   # assert hook
-  assert_line "Welcome to your flox environment!"
+  assert_line "sourcing hook.on-activate"
   # assert installed package
   assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
   # assert var
@@ -305,7 +328,7 @@ env_is_activated() {
 
   run zsh -c 'eval "$("$FLOX_BIN" activate)"; type hello; echo $foo'
   assert_success
-  assert_line "Welcome to your flox environment!"
+  assert_line "sourcing hook.on-activate"
   assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
   assert_line "baz"
 }

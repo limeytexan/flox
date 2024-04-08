@@ -591,8 +591,13 @@ impl Activate {
             return Self::old_activate_in_place(shell, exports, activation_path);
         }
 
-        let mut command = Command::new(activate_path);
+        let mut command = Command::new(&activate_path);
         command.envs(exports);
+
+        debug!("running activation command: {:?}", command);
+
+        let output = command.output().expect("failed to run activation script");
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
 
         // XXX BUG TODO: this is not correct, we need to know the value of
         // $FLOX_SHELL in order to know the correct syntax for exporting
@@ -610,16 +615,13 @@ impl Activate {
 
             # to avoid infinite recursion sourcing bashrc
             export FLOX_SOURCED_FROM_SHELL_RC=1
-        "};
+            {output}
+            unset FLOX_SOURCED_FROM_SHELL_RC
+        ",
+        output = String::from_utf8_lossy(&output.stdout),
+        };
 
         print!("{script}");
-
-        debug!("running activation command: {:?}", command);
-
-        // command prints remainder of script to STDOUT.
-        command.status().expect("failed to exec");
-
-        println!("unset FLOX_SOURCED_FROM_SHELL_RC");
     }
 
     /// Quote run args so that words don't get split,

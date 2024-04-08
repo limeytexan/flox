@@ -64,6 +64,18 @@ namespace flox::buildenv {
 #  error "FLOX_BASH_PKG must be set to the path of the nix bash package"
 #endif
 
+#ifndef FLOX_COREUTILS_PKG
+#  error "FLOX_COREUTILS_PKG must be set to the path of the nix coreutils package"
+#endif
+
+#ifndef FLOX_GNUSED_PKG
+#  error "FLOX_GNUSED_PKG must be set to the path of the nix gnused package"
+#endif
+
+#ifndef FLOX_PROCPS_PKG
+#  error "FLOX_PROCPS_PKG must be set to the path of the nix procps package"
+#endif
+
 /* -------------------------------------------------------------------------- */
 
 // Top-level activate script, always invoked with nix bash.
@@ -71,11 +83,57 @@ const char * const ACTIVATE_SCRIPT = R"_(
 # Flox environment activation script.
 [ ${_FLOX_PKGDB_VERBOSITY:-0} -eq 0 ] || set -x
 
+# Capture starting environment.
+_start_env="$($_coreutils/bin/mktemp --suffix=.start-env)"
+_end_env="$($_coreutils/bin/mktemp --suffix=.end-env)"
+export > "$_start_env"
+
+function cleanup() {
+  $_coreutils/bin/rm -f "$_start_env" "$_end_env"
+}
+
+# Identify the shell dialect to be used for script output.
+# TODO: retire this logic in favor of a standalone DOTADIW utility that can
+#       follow the STDOUT file descriptor to identify the listening shell.
+function identifyParentShell() {
+  local parentShell="$SHELL" # default
+  local shellCmd="${SHELL/*\//}" # aka basename
+  local parentShellCmd="$shellCmd" # default
+  # Only attempt a guess if we know our parent PID.
+  if [ -n "$FLOX_PARENT_PID" ]; then
+    if [ -L "/proc/$FLOX_PARENT_PID/exe" -a -r "/proc/$FLOX_PARENT_PID/exe" ]; then
+      # Linux - use `readlink` to get the realpath of the parent shell.
+      parentShell="$($_coreutils/bin/readlink "/proc/$FLOX_PARENT_PID/exe")"
+    else
+      # Darwin/other - use `ps` to guess the shell.
+      local psOutput
+      if psOutput="$($_procps/bin/ps -c -o command= -p $FLOX_PARENT_PID 2>/dev/null)"; then
+        # Trim out leading "-" character.
+        if [ -n "$psOutput" ]; then
+          parentShell="${psOutput/#-/}"
+        fi
+      fi
+    fi
+    # Split out the command by itself (aka basename).
+    parentShellCmd="${parentShell/*\//}"
+    # Compare $SHELL and $parentShell to see if the command names match.
+    if [ "$shellCmd" == "$parentShellCmd" ]; then
+      # Respect $SHELL over $parentShell (which is usually its realpath).
+      echo "$SHELL"
+    else
+      # Return parent shell.
+      echo "$parentShell"
+    fi
+  else
+    # We don't know our parent PID so don't even guess.
+    echo "$SHELL"
+  fi
+}
+
 # Start by identifying the shell listening on STDOUT. This is usually just
 # the parent PID, but in the case of direnv can be something a few steps up
 # the process tree.
-# TODO: make this real. For now, just punt and use $SHELL.
-FLOX_SHELL="${FLOX_SHELL:-${SHELL}}"
+FLOX_SHELL="${FLOX_SHELL:-$(identifyParentShell)}"
 [ -n "$FLOX_SHELL" ] || {
   echo "FLOX_SHELL is not set and \$SHELL is empty. Exiting." >&2
   exit 1
@@ -84,7 +142,7 @@ FLOX_SHELL="${FLOX_SHELL:-${SHELL}}"
 # Set FLOX_ENV as the path by which all flox scripts can make reference to
 # the environment to which they belong. Use this to define the path to the
 # activation scripts directory.
-FLOX_ENV="$( dirname -- "${BASH_SOURCE[0]}" )"
+FLOX_ENV="$( $_coreutils/bin/dirname -- "${BASH_SOURCE[0]}" )"
 export FLOX_ENV
 
 # Process the flox environment customizations, which includes (amongst
@@ -107,17 +165,22 @@ fi
 
 # Source the hook-on-activate script if it exists.
 if [ -e "$FLOX_ENV/activate.d/hook-on-activate" ]; then
-  source "$FLOX_ENV/activate.d/hook-on-activate"
+  # Nothing good can come from output printed to stdout in the
+  # user-provided hook scripts because these will then get
+  # sucked up as configuration statements within the "in-place"
+  # activation mode. So, we'll redirect stdout to stderr.
+  source "$FLOX_ENV/activate.d/hook-on-activate" 1>&2
 elif [ -e "$FLOX_ENV/activate.d/hook-script" ]; then
   # [hook.script] is deprecated - print warning and source it.
   echo "WARNING: [hook.script] is deprecated. Use [hook.on-activate] instead." >&2
-  source "$FLOX_ENV/activate.d/hook-on-activate"
+  source "$FLOX_ENV/activate.d/hook-on-activate" 1>&2
 fi
 
 # This is where activation diverges based on the mode:
 
 # 1. "command" mode: simply exec the provided command and args
 if [ $# -gt 0 ]; then
+  cleanup
   # The colon is a no-op command that returns true so don't
   # attempt to execute it as a command.
   if [ "$1" = ":" ]; then
@@ -131,6 +194,7 @@ fi
 #   a. defeat the shell's normal startup scripts
 #   b. source the relevant activation script
 if [ -t 1 ]; then
+  cleanup
   case "$FLOX_SHELL" in
     *bash)
       exec "$FLOX_SHELL" --rcfile "$FLOX_ENV/activate.d/bash"
@@ -152,12 +216,38 @@ if [ -t 1 ]; then
 fi
 
 # 3. "in-place" mode: emit activation commands in correct shell dialect
+
+# Start by comparing the starting and ending environments and
+# emit commands to delete and add environment variables as needed.
+export > "$_end_env"
 case "$FLOX_SHELL" in
-  *bash) echo "$( <"$FLOX_ENV/activate.d/bash" )" ;;
-  *zsh)  echo "$( <"$FLOX_ENV/activate.d/zsh"  )" ;;
-  *fish) echo "$( <"$FLOX_ENV/activate.d/fish" )" ;;
-  *)     echo "Unsupported shell: $FLOX_SHELL" >&2; exit 1  ;;
+  *bash|*zsh)
+    # Use "unset" for env deletions.
+    # TODO: weed out unset statements for the exports to follow.
+    $_coreutils/bin/comm -23 "$_start_env" "$_end_env" | \
+      $_gnused/bin/sed -e 's/declare -x/unset/' -e 's/=.*//'
+    # Use "export" for env additions.
+    $_coreutils/bin/comm -13 "$_start_env" "$_end_env" | \
+      $_gnused/bin/sed -e 's/declare -x/export/'
+    ;;
+  *fish)
+    echo TODO: fish support
+    ;;
+  *)
+    echo "Unsupported shell: $FLOX_SHELL" >&2
+    exit 1
+    ;;
 esac
+
+# Finish by echoing the contents of the shell-specific activation script.
+case "$FLOX_SHELL" in
+  *bash) echo "$( <"$FLOX_ENV/activate.d/bash" )";;
+  *zsh)  echo "$( <"$FLOX_ENV/activate.d/zsh"  )";;
+  *fish) echo "$( <"$FLOX_ENV/activate.d/fish" )";;
+  *)     echo "unsupported shell: $FLOX_SHELL" >&2; exit 1;;
+esac
+
+cleanup
 )_";
 
 /* We disable command hashing so a `flox install` will be reflected immediately
@@ -720,6 +810,10 @@ addActivationScript( const std::filesystem::path & tempDir )
       throw ActivationScriptBuildFailure( std::string( strerror( errno ) ) );
     }
   scriptTmpFile << "#!" << FLOX_BASH_PKG << "/bin/bash" << std::endl;
+  // Create variables for Nix-provided tooling.
+  scriptTmpFile << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl;
+  scriptTmpFile << "_gnused=" << FLOX_GNUSED_PKG << std::endl;
+  scriptTmpFile << "_procps=" << FLOX_PROCPS_PKG << std::endl;
   scriptTmpFile << ACTIVATE_SCRIPT;
   if ( scriptTmpFile.fail() )
     {
@@ -909,6 +1003,9 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
   references.insert( state.store->parseStorePath( SET_PROMPT_BASH_SH ) );
   references.insert( state.store->parseStorePath( SET_PROMPT_ZSH_SH ) );
   references.insert( state.store->parseStorePath( FLOX_BASH_PKG ) );
+  references.insert( state.store->parseStorePath( FLOX_COREUTILS_PKG ) );
+  references.insert( state.store->parseStorePath( FLOX_GNUSED_PKG ) );
+  references.insert( state.store->parseStorePath( FLOX_PROCPS_PKG ) );
 
   return { realised, references };
 }

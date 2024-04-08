@@ -54,6 +54,7 @@ EOF
     cat << EOF
 [hook]
 on-activate = """
+  echo "sourcing hook.on-activate";
   echo \$foo;
 """
 EOF
@@ -301,27 +302,31 @@ env_is_activated() {
 # bats test_tags=activate,activate:inplace-modifies
 @test "'flox activate' modifies the current shell (bash)" {
 
-  # set a hook
+  # set profile scripts
   sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  # set a hook
+  sed -i -e "s/^\[hook\]/${VARS_HOOK_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   # set vars
   sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   "$FLOX_BIN" install hello
 
   run bash -c 'eval "$("$FLOX_BIN" activate)"; type hello; echo $foo'
   assert_success
-  # assert hook
   assert_line "sourcing hook.on-activate"
-  # assert installed package
+  assert_line "sourcing profile.common"
+  assert_line "sourcing profile.bash"
+  refute_line "sourcing profile.zsh"
   assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
-  # assert var
   assert_line "baz"
 }
 
 # bats test_tags=activate,activate:inplace-modifies
 @test "'flox activate' modifies the current shell (zsh)" {
 
-  # set a hook
+  # set profile scripts
   sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  # set a hook
+  sed -i -e "s/^\[hook\]/${VARS_HOOK_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   # set vars
   sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   "$FLOX_BIN" install hello
@@ -329,6 +334,9 @@ env_is_activated() {
   run zsh -c 'eval "$("$FLOX_BIN" activate)"; type hello; echo $foo'
   assert_success
   assert_line "sourcing hook.on-activate"
+  assert_line "sourcing profile.common"
+  refute_line "sourcing profile.bash"
+  assert_line "sourcing profile.zsh"
   assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
   assert_line "baz"
 }

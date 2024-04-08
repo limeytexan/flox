@@ -259,7 +259,7 @@ env_is_activated() {
 # bats test_tags=activate,activate:path
 @test "'flox activate' modifies path" {
   original_path="$PATH"
-  run "$FLOX_BIN" activate -- echo '$PATH'
+  run "$FLOX_BIN" activate -- bash -c 'echo $PATH'
   assert_success
   assert_not_equal "$original_path" "$output"
 
@@ -391,11 +391,11 @@ env_is_activated() {
   # install python and pip
   "$FLOX_BIN" install python311Packages.pip
 
-  run -- "$FLOX_BIN" activate -- echo PYTHONPATH is '$PYTHONPATH'
+  run -- "$FLOX_BIN" activate -- bash -c 'echo PYTHONPATH is $PYTHONPATH'
   assert_success
   assert_line "PYTHONPATH is $(realpath $PROJECT_DIR)/.flox/run/$NIX_SYSTEM.$PROJECT_NAME/lib/python3.11/site-packages"
 
-  run -- "$FLOX_BIN" activate -- echo PIP_CONFIG_FILE is '$PIP_CONFIG_FILE'
+  run -- "$FLOX_BIN" activate -- bash -c 'echo PIP_CONFIG_FILE is $PIP_CONFIG_FILE'
   assert_success
   assert_line "PIP_CONFIG_FILE is $(realpath $PROJECT_DIR)/.flox/pip.ini"
 }
@@ -408,11 +408,11 @@ env_is_activated() {
   export PYTHONPATH="/some/other/pythonpath"
   export PIP_CONFIG_FILE="/some/other/pip.ini"
 
-  run -- "$FLOX_BIN" activate -- echo PYTHONPATH is '$PYTHONPATH'
+  run -- "$FLOX_BIN" activate -- bash -c 'echo PYTHONPATH is $PYTHONPATH'
   assert_success
   assert_line "PYTHONPATH is /some/other/pythonpath"
 
-  run -- "$FLOX_BIN" activate -- echo PIP_CONFIG_FILE is '$PIP_CONFIG_FILE'
+  run -- "$FLOX_BIN" activate -- bash -c 'echo PIP_CONFIG_FILE is $PIP_CONFIG_FILE'
   assert_success
   assert_line "PIP_CONFIG_FILE is /some/other/pip.ini"
 }
@@ -453,7 +453,7 @@ env_is_activated() {
   "$FLOX_BIN" edit -f "$BATS_TEST_DIRNAME/activate/on-activate.toml"
   # Run a command that causes the activation scripts to run without putting us
   # in the interactive shell
-  run "$FLOX_BIN" activate -- echo "hello"
+  run "$FLOX_BIN" activate -- bash -c 'echo "hello"'
   # The on-activate script creates a directory whose name is the value of the
   # "$foo" environment variable.
   [ -d "$PROJECT_DIR/bar" ]
@@ -462,7 +462,7 @@ env_is_activated() {
 # ---------------------------------------------------------------------------- #
 
 # bats test_tags=activate:scripts:on-activate
-@test "'hook.on-activate' doesn't modify environment variables" {
+@test "'hook.on-activate' modifies environment variables" {
   "$FLOX_BIN" delete -f
   "$FLOX_BIN" init
   "$FLOX_BIN" edit -f "$BATS_TEST_DIRNAME/activate/on-activate.toml"
@@ -475,10 +475,23 @@ env_is_activated() {
   # - If the on-activate script is able to modify variables outside the shell,
   #   then we should see "baz" here. The expected output is "bar" since that
   #   script isn't supposed to be able to modify environment variables.
-  run "$FLOX_BIN" activate -- echo '$foo'
-  assert_output "bar"
+  run "$FLOX_BIN" activate -- bash -c 'echo $foo'
+  assert_output "baz"
 }
 
+# ---------------------------------------------------------------------------- #
+
+# bats test_tags=activate:scripts:on-activate
+@test "bash: 'hook.on-activate' is sourced before 'profile.common'" {
+  "$FLOX_BIN" delete -f
+  "$FLOX_BIN" init
+  "$FLOX_BIN" edit -f "$BATS_TEST_DIRNAME/activate/profile-order.toml"
+  NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/simple.exp" "$PROJECT_DIR"
+  # 'hook.on-activate' sets a var containing "hookie",
+  # 'profile.common' creates a directory named after the contents of that
+  # variable, suffixed by '-common'
+  [ -d hookie-common ]
+}
 
 # ---------------------------------------------------------------------------- #
 
@@ -486,13 +499,12 @@ env_is_activated() {
   "$FLOX_BIN" delete -f
   "$FLOX_BIN" init
   "$FLOX_BIN" edit -f "$BATS_TEST_DIRNAME/activate/profile-order.toml"
-  SHELL="bash" run bash -c '"$FLOX_BIN" activate -- true'
+  FLOX_SHELL=bash NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/simple.exp" "$PROJECT_DIR"
   # 'profile.common' sets a var containing "common",
   # 'profile.bash' creates a directory named after the contents of that
   # variable, suffixed by '-bash'
-  [ -d "common-bash" ]
+  [ -d common-bash ]
 }
-
 
 # ---------------------------------------------------------------------------- #
 
@@ -500,9 +512,9 @@ env_is_activated() {
   "$FLOX_BIN" delete -f
   "$FLOX_BIN" init
   "$FLOX_BIN" edit -f "$BATS_TEST_DIRNAME/activate/profile-order.toml"
-  SHELL="zsh" run zsh -c '"$FLOX_BIN" activate -- true'
+  FLOX_SHELL=zsh NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/simple.exp" "$PROJECT_DIR"
   # 'profile.common' sets a var containing "common",
   # 'profile.zsh' creates a directory named after the contents of that variable,
   # suffixed by '-zsh'
-  [ -d "common-zsh" ]
+  [ -d common-zsh ]
 }

@@ -161,7 +161,7 @@ common_file_teardown() {
   # Delete file tmpdir and env unless the user requests to preserve them.
   if [[ -z "${FLOX_TEST_KEEP_TMP:-}" ]]; then
     deleteEnvForce "$TEST_ENVIRONMENT"
-  #   rm -rf "$BATS_FILE_TMPDIR"
+    rm -rf "$BATS_FILE_TMPDIR"
   fi
   unset FLOX_TEST_HOME
 }
@@ -171,7 +171,7 @@ teardown_file() { common_file_teardown; }
 common_test_teardown() {
   # Delete test tmpdir unless the user requests to preserve them.
   # XXX: We do not attempt to delete envs here.
-  : # if [[ -z "${FLOX_TEST_KEEP_TMP:-}" ]]; then rm -rf "$BATS_TEST_TMPDIR"; fi
+  if [[ -z "${FLOX_TEST_KEEP_TMP:-}" ]]; then rm -rf "$BATS_TEST_TMPDIR"; fi
 }
 
 teardown() { common_test_teardown; }

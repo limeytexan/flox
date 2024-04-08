@@ -60,7 +60,7 @@ on-activate = """
 EOF
   )
 
-  # rm -rf "$PROJECT_DIR"
+  rm -rf "$PROJECT_DIR"
   mkdir -p "$PROJECT_DIR"
   pushd "$PROJECT_DIR" > /dev/null || return
   "$FLOX_BIN" init -d "$PROJECT_DIR"
@@ -68,7 +68,7 @@ EOF
 
 project_teardown() {
   popd > /dev/null || return
-  # rm -rf "${PROJECT_DIR?}"
+  rm -rf "${PROJECT_DIR?}"
   unset PROJECT_DIR
   unset PROJECT_NAME
 }

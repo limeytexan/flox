@@ -488,9 +488,9 @@ setup_suite() { common_suite_setup; }
 # Run on exit after all other `*teardown' routines.
 common_suite_teardown() {
   # Delete suite tmpdir and envs unless the user requests to preserve them.
-  # if [[ -z ${FLOX_TEST_KEEP_TMP-} ]]; then
-  #   rm -rf "$BATS_SUITE_TMPDIR"
-  # fi
+  if [[ -z ${FLOX_TEST_KEEP_TMP-} ]]; then
+    rm -rf "$BATS_SUITE_TMPDIR"
+  fi
   # Our agent was useful, but it's time for them to retire.
   # We force true in case we are tearing down when an agent never launched.
   eval "$(ssh-agent -k 2> /dev/null || echo ':')"

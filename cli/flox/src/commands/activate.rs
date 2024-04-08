@@ -426,6 +426,7 @@ impl Activate {
         }
 
         let mut command = Command::new(activate_path);
+        command.env("FLOX_SHELL", shell.exe_path());
         command.envs(exports);
 
         debug!("running activation command: {:?}", command);
@@ -592,6 +593,7 @@ impl Activate {
         }
 
         let mut command = Command::new(&activate_path);
+        command.env("FLOX_SHELL", shell.exe_path());
         command.envs(exports);
 
         debug!("running activation command: {:?}", command);

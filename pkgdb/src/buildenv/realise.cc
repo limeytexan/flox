@@ -92,53 +92,6 @@ function cleanup() {
   $_coreutils/bin/rm -f "$_start_env" "$_end_env"
 }
 
-# Identify the shell dialect to be used for script output.
-# TODO: retire this logic in favor of a standalone DOTADIW utility that can
-#       follow the STDOUT file descriptor to identify the listening shell.
-function identifyParentShell() {
-  local parentShell="$SHELL" # default
-  local shellCmd="${SHELL/*\//}" # aka basename
-  local parentShellCmd="$shellCmd" # default
-  # Only attempt a guess if we know our parent PID.
-  if [ -n "$FLOX_PARENT_PID" ]; then
-    if [ -L "/proc/$FLOX_PARENT_PID/exe" -a -r "/proc/$FLOX_PARENT_PID/exe" ]; then
-      # Linux - use `readlink` to get the realpath of the parent shell.
-      parentShell="$($_coreutils/bin/readlink "/proc/$FLOX_PARENT_PID/exe")"
-    else
-      # Darwin/other - use `ps` to guess the shell.
-      local psOutput
-      if psOutput="$($_procps/bin/ps -c -o command= -p $FLOX_PARENT_PID 2>/dev/null)"; then
-        # Trim out leading "-" character.
-        if [ -n "$psOutput" ]; then
-          parentShell="${psOutput/#-/}"
-        fi
-      fi
-    fi
-    # Split out the command by itself (aka basename).
-    parentShellCmd="${parentShell/*\//}"
-    # Compare $SHELL and $parentShell to see if the command names match.
-    if [ "$shellCmd" == "$parentShellCmd" ]; then
-      # Respect $SHELL over $parentShell (which is usually its realpath).
-      echo "$SHELL"
-    else
-      # Return parent shell.
-      echo "$parentShell"
-    fi
-  else
-    # We don't know our parent PID so don't even guess.
-    echo "$SHELL"
-  fi
-}
-
-# Start by identifying the shell listening on STDOUT. This is usually just
-# the parent PID, but in the case of direnv can be something a few steps up
-# the process tree.
-FLOX_SHELL="${FLOX_SHELL:-$(identifyParentShell)}"
-[ -n "$FLOX_SHELL" ] || {
-  echo "FLOX_SHELL is not set and \$SHELL is empty. Exiting." >&2
-  exit 1
-}
-
 # Set FLOX_ENV as the path by which all flox scripts can make reference to
 # the environment to which they belong. Use this to define the path to the
 # activation scripts directory.
@@ -166,17 +119,17 @@ fi
 # Source the hook-on-activate script if it exists.
 if [ -e "$FLOX_ENV/activate.d/hook-on-activate" ]; then
   # Nothing good can come from output printed to stdout in the
-  # user-provided hook scripts because these will then get
-  # sucked up as configuration statements within the "in-place"
-  # activation mode. So, we'll redirect stdout to stderr.
+  # user-provided hook scripts because these can get interpreted
+  # as configuration statements by the "in-place" activation
+  # mode. So, we'll redirect stdout to stderr.
   source "$FLOX_ENV/activate.d/hook-on-activate" 1>&2
 elif [ -e "$FLOX_ENV/activate.d/hook-script" ]; then
   # [hook.script] is deprecated - print warning and source it.
-  echo "WARNING: [hook.script] is deprecated. Use [hook.on-activate] instead." >&2
+  echo "WARNING: [hook.script] is deprecated, use [hook.on-activate] instead." >&2
   source "$FLOX_ENV/activate.d/hook-on-activate" 1>&2
 fi
 
-# This is where activation diverges based on the mode:
+# From this point on the activation process depends on the mode:
 
 # 1. "command" mode: simply exec the provided command and args
 if [ $# -gt 0 ]; then
@@ -189,6 +142,12 @@ if [ $# -gt 0 ]; then
     exec "$@"
   fi
 fi
+
+# The remaining modes require that $FLOX_SHELL be set by the rust CLI.
+[ -n "$FLOX_SHELL" ] || {
+  echo "FLOX_SHELL not set .. defaulting to ${SHELL}" >&2
+  FLOX_SHELL="${SHELL}"
+}
 
 # 2. "interactive" mode: invoke the user's shell with args that:
 #   a. defeat the shell's normal startup scripts

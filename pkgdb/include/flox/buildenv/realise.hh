@@ -48,6 +48,31 @@
 //   'foo=bar; export foo;' (with newlines)
 #define posixSetEnv( var, value ) var "=" value "\nexport " var ";" << std::endl
 
+// Macro for appending a conditional action to a fish script.
+//
+// E.g. 'fishIfThen("[ -t 1 ]", "echo interactive")' returns:
+//   'if [ -t 1 ]; then echo interactive; fi' (with newlines)
+#define fishIfThen( cond, action ) "if " cond "\n  " action "\nend" << std::endl
+
+// Macro for setting and exporting an environment variable in fish.
+//
+// E.g. 'fishSetEnv("foo", "bar")' returns:
+//   'foo=bar; export foo;' (with newlines)
+#define fishSetEnv( var, value ) "set -gx " var " " value ";" << std::endl
+
+// Macro for appending a conditional action to a csh or tcsh script.
+//
+// E.g. 'cshIfThen("[ -t 1 ]", "echo interactive")' returns:
+//   'if [ -t 1 ]; then echo interactive; fi' (with newlines)
+#define cshIfThen( cond, action ) \
+  "if ( " cond " ) then\n  " action "\nendif" << std::endl
+
+// Macro for setting and exporting an environment variable in csh or tcsh.
+//
+// E.g. 'cshSetEnv("foo", "bar")' returns:
+//   'setenv foo bar' (with newlines)
+#define cshSetEnv( var, value ) "setenv " var " " value ";" << std::endl
+
 /* -------------------------------------------------------------------------- */
 
 namespace flox::buildenv {

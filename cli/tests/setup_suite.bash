@@ -409,6 +409,10 @@ user_dotfiles_setup() {
            "zshrc" "zshenv" "zlogin" "zlogout" "zprofile"; do
     echo "echo Setting PATH from .$i >&2; export PATH=\"$BADPATH\"" > "$HOME/.$i"
   done
+  mkdir -p "$HOME/.config/fish"
+  echo "set -gx PATH $BADPATH" > "$HOME/.config/fish/config.fish"
+  echo "setenv PATH $BADPATH" > "$HOME/.cshrc"
+  echo "setenv PATH $BADPATH" > "$HOME/.tcshrc"
   export __FT_RAN_USER_DOTFILES_SETUP=:
 }
 

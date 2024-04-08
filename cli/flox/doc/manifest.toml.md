@@ -316,7 +316,7 @@ The `profile.common` script is sourced
 for every shell
 and special care should be taken
 to ensure compatibility with all shells.
-The `profile.bash` and `profile.zsh` scripts
+The `profile.{bash,fish,tcsh,zsh}` scripts
 are then sourced
 by the corresponding shell.
 
@@ -336,6 +336,16 @@ bash = """
     alias foo="echo bar"
     set -o vi
 """
+fish = """
+    source $venv_dir/bin/activate.fish
+    fish_vi_key_bindings
+    alias foo="echo bar"
+"""
+tcsh = """
+    source $venv_dir/bin/activate.tcsh
+    bindkey -v
+    alias foo "echo bar"
+"""
 zsh = """
     source $venv_dir/bin/activate
     alias foo="echo bar"
@@ -348,7 +358,7 @@ is intended for setup that will be sourced for every shell,
 and it is your responsibility
 to make sure that commands are compatible with all shells
 in which the environment is expected to be activated.
-The `profile.bash` and `profile.zsh` scripts
+The `profile.{bash,fish,tcsh,zsh` scripts
 are sourced *after* `profile.common`,
 and are only sourced by the corresponding shell.
 The shell-specific profile scripts

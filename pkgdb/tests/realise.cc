@@ -58,6 +58,8 @@ testLockfile()
     "profile": {
       "common": "echo hello",
       "bash": "echo hello",
+      "fish": "echo hello",
+      "tcsh": "echo hello",
       "zsh": "echo hello"
     },
     "hook": {
@@ -156,8 +158,8 @@ test_scriptsAreAddedToScriptsDir( nix::ref<nix::EvalState> & state,
   auto scriptsDir = std::filesystem::path( output.first.path )
                     / flox::buildenv::ACTIVATION_SUBDIR_NAME;
   std::vector<std::string> scripts
-    = { "profile-common",   "profile-bash", "profile-zsh",
-        "hook-on-activate", "bash",         "zsh" };
+    = { "profile-common", "profile-bash",     "profile-fish", "profile-tcsh",
+        "profile-zsh",    "hook-on-activate", "bash",         "zsh" };
   for ( const auto & script : scripts )
     {
       auto path = scriptsDir / script;
@@ -178,7 +180,7 @@ test_scriptsAreSourcedOrCalled( nix::ref<nix::EvalState> & state,
                               / flox::buildenv::ACTIVATION_SCRIPT_NAME;
   auto scriptsDir = std::filesystem::path( output.first.path )
                     / flox::buildenv::ACTIVATION_SUBDIR_NAME;
-  std::vector<std::string> shells         = { "bash", "zsh" };
+  std::vector<std::string> shells         = { "bash", "fish", "tcsh", "zsh" };
   std::vector<std::string> profileScripts = { "common" };
   profileScripts.insert( profileScripts.begin(), shells.begin(), shells.end() );
   for ( const auto & shell : shells )

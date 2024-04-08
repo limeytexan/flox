@@ -44,6 +44,12 @@ common = """
 bash = """
   echo "sourcing profile.bash";
 """
+fish = """
+  echo "sourcing profile.fish";
+"""
+tcsh = """
+  echo "sourcing profile.tcsh";
+"""
 zsh = """
   echo "sourcing profile.zsh";
 """
@@ -111,7 +117,7 @@ env_is_activated() {
 }
 
 # ---------------------------------------------------------------------------- #
-
+# bats test_tags=activate,activate:prompt,activate:bash,activate:prompt:bash
 @test "bash: activate modifies prompt and puts package in path" {
   run "$FLOX_BIN" install -d "$PROJECT_DIR" hello
   assert_success
@@ -122,7 +128,29 @@ env_is_activated() {
 }
 
 # ---------------------------------------------------------------------------- #
+# bats test_tags=activate,activate:prompt,activate:fish,activate:prompt:fish
+@test "fish: activate modifies prompt and puts package in path" {
+  run "$FLOX_BIN" install -d "$PROJECT_DIR" hello
+  assert_success
+  assert_output --partial "✅ 'hello' installed to environment"
+  FLOX_SHELL=fish USER="$REAL_USER" NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/hello.exp" "$PROJECT_DIR"
+  assert_output --regexp "bin/hello"
+  refute_output "not found"
+}
 
+# ---------------------------------------------------------------------------- #
+# bats test_tags=activate,activate:prompt,activate:tcsh,activate:prompt:tcsh
+@test "tcsh: activate modifies prompt and puts package in path" {
+  run "$FLOX_BIN" install -d "$PROJECT_DIR" hello
+  assert_success
+  assert_output --partial "✅ 'hello' installed to environment"
+  FLOX_SHELL=tcsh USER="$REAL_USER" NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/hello.exp" "$PROJECT_DIR"
+  assert_output --regexp "bin/hello"
+  refute_output "not found"
+}
+
+# ---------------------------------------------------------------------------- #
+# bats test_tags=activate,activate:prompt,activate:zsh,activate:prompt:zsh
 @test "zsh: activate modifies prompt and puts package in path" {
   run "$FLOX_BIN" install -d "$PROJECT_DIR" hello
   assert_success
@@ -153,6 +181,52 @@ env_is_activated() {
   assert_success
   refute_output --partial "sourcing profile.common"
   refute_output --partial "sourcing profile.bash"
+  refute_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
+}
+
+# ---------------------------------------------------------------------------- #
+# bats test_tags=activate,activate:hook:fish
+@test "fish: activate runs profile scripts" {
+  # calls init
+  sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+
+  FLOX_SHELL=fish NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/hook.exp" "$PROJECT_DIR"
+  assert_success
+  assert_output --partial "sourcing profile.common"
+  assert_output --partial "sourcing profile.fish"
+  refute_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
+
+  FLOX_SHELL=fish USER="$REAL_USER" NO_COLOR=1 run $FLOX_BIN activate --dir "$PROJECT_DIR" -- :
+  assert_success
+  refute_output --partial "sourcing profile.common"
+  refute_output --partial "sourcing profile.fish"
+  refute_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
+}
+
+# ---------------------------------------------------------------------------- #
+# bats test_tags=activate,activate:hook:tcsh
+@test "tcsh: activate runs profile scripts" {
+  # calls init
+  sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+
+  FLOX_SHELL=tcsh NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/hook.exp" "$PROJECT_DIR"
+  assert_success
+  assert_output --partial "sourcing profile.common"
+  assert_output --partial "sourcing profile.tcsh"
+  refute_output --partial "sourcing profile.zsh"
+  refute_output --partial "sourcing hook.on-activate"
+  refute_output --partial "sourcing hook.script"
+
+  FLOX_SHELL=tcsh USER="$REAL_USER" NO_COLOR=1 run $FLOX_BIN activate --dir "$PROJECT_DIR" -- :
+  assert_success
+  refute_output --partial "sourcing profile.common"
+  refute_output --partial "sourcing profile.tcsh"
   refute_output --partial "sourcing profile.zsh"
   refute_output --partial "sourcing hook.on-activate"
   refute_output --partial "sourcing hook.script"
@@ -195,6 +269,26 @@ env_is_activated() {
   assert_output --partial "test_alias is aliased to \`echo testing'"
 }
 
+# bats test_tags=activate,activate:fish,activate:rc:fish
+@test "fish: activate respects ~/.fishrc" {
+  echo "alias test_alias='echo testing'" > "$HOME/.fishrc"
+  # TODO: flox will set HOME if it doesn't match the home of the user with
+  # current euid. I'm not sure if we should change that, but for now just set
+  # USER to REAL_USER.
+  FLOX_SHELL=fish USER="$REAL_USER" NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/rc.exp" "$PROJECT_DIR"
+  assert_output --partial "test_alias is aliased to \`echo testing'"
+}
+
+# bats test_tags=activate,activate:rc:tcsh
+@test "tcsh: activate respects ~/.tcshrc" {
+  echo "alias test_alias='echo testing'" > "$HOME/.tcshrc"
+  # TODO: flox will set HOME if it doesn't match the home of the user with
+  # current euid. I'm not sure if we should change that, but for now just set
+  # USER to REAL_USER.
+  FLOX_SHELL=tcsh USER="$REAL_USER" NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/rc.exp" "$PROJECT_DIR"
+  assert_output --partial "test_alias is aliased to \`echo testing'"
+}
+
 # ---------------------------------------------------------------------------- #
 # bats test_tags=activate,activate:rc:zsh
 @test "zsh: activate respects ~/.zshrc" {
@@ -220,6 +314,32 @@ env_is_activated() {
 }
 
 # ---------------------------------------------------------------------------- #
+# bats test_tags=activate,activate:envVar:fish
+@test "fish: activate sets env var" {
+  sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+
+  FLOX_SHELL=fish NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/envVar.exp" "$PROJECT_DIR"
+  assert_output --partial "baz"
+
+  FLOX_SHELL=fish NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- sh -c 'echo $foo'
+  assert_success
+  assert_output --partial "baz"
+}
+
+# ---------------------------------------------------------------------------- #
+# bats test_tags=activate,activate:envVar:tcsh
+@test "tcsh: activate sets env var" {
+  sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+
+  FLOX_SHELL=tcsh NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/envVar.exp" "$PROJECT_DIR"
+  assert_output --partial "baz"
+
+  FLOX_SHELL=tcsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- sh -c 'echo $foo'
+  assert_success
+  assert_output --partial "baz"
+}
+
+# ---------------------------------------------------------------------------- #
 # bats test_tags=activate,activate:envVar:zsh
 @test "zsh: activate sets env var" {
 
@@ -239,17 +359,23 @@ env_is_activated() {
 # ---------------------------------------------------------------------------- #
 
 # bats test_tags=activate,activate:envVar-before-hook:zsh
-@test "zsh and bash: activate sets env var before hook" {
+@test "{bash,fish,tcsh,zsh}: activate sets env var before hook" {
   sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   sed -i -e "s/^\[hook\]/${VARS_HOOK_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
 
   # TODO: flox will set HOME if it doesn't match the home of the user with
   # current euid. I'm not sure if we should change that, but for now just set
   # USER to REAL_USER.
-  FLOX_SHELL=zsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
+  FLOX_SHELL=bash NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
   assert_success
   assert_output --partial "baz"
-  FLOX_SHELL=bash NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
+  FLOX_SHELL=fish NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
+  assert_success
+  assert_output --partial "baz"
+  FLOX_SHELL=tcsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
+  assert_success
+  assert_output --partial "baz"
+  FLOX_SHELL=zsh NO_COLOR=1 run "$FLOX_BIN" activate --dir "$PROJECT_DIR" -- :
   assert_success
   assert_output --partial "baz"
 }
@@ -279,10 +405,6 @@ env_is_activated() {
 # bats test_tags=activate,activate:inplace-prints
 @test "'flox activate' prints script to modify current shell (bash)" {
   # Flox detects that the output is not a tty and prints the script to stdout
-  #
-  # TODO:
-  # better with a flag like '--print-script'
-  # this is confusing:
   FLOX_SHELL="bash" run "$FLOX_BIN" activate
   assert_success
   # check that env vars are set for compatibility with nix built software
@@ -291,7 +413,28 @@ env_is_activated() {
 }
 
 # bats test_tags=activate,activate:inplace-prints
+@test "'flox activate' prints script to modify current shell (fish)" {
+  # Flox detects that the output is not a tty and prints the script to stdout
+  FLOX_SHELL="fish" run "$FLOX_BIN" activate
+  assert_success
+  # check that env vars are set for compatibility with nix built software
+  assert_line --partial "export NIX_SSL_CERT_FILE="
+  assert_output --regexp "Disable command hashing"
+}
+
+# bats test_tags=activate,activate:inplace-prints
+@test "'flox activate' prints script to modify current shell (tcsh)" {
+  # Flox detects that the output is not a tty and prints the script to stdout
+  FLOX_SHELL="tcsh" run "$FLOX_BIN" activate
+  assert_success
+  # check that env vars are set for compatibility with nix built software
+  assert_line --partial "export NIX_SSL_CERT_FILE="
+  assert_output --regexp "Disable command hashing"
+}
+
+# bats test_tags=activate,activate:inplace-prints
 @test "'flox activate' prints script to modify current shell (zsh)" {
+  # Flox detects that the output is not a tty and prints the script to stdout
   FLOX_SHELL="zsh" run "$FLOX_BIN" activate
   assert_success
   # check that env vars are set for compatibility with nix built software
@@ -301,7 +444,6 @@ env_is_activated() {
 
 # bats test_tags=activate,activate:inplace-modifies
 @test "'flox activate' modifies the current shell (bash)" {
-
   # set profile scripts
   sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   # set a hook
@@ -315,6 +457,52 @@ env_is_activated() {
   assert_line "sourcing hook.on-activate"
   assert_line "sourcing profile.common"
   assert_line "sourcing profile.bash"
+  assert_line "sourcing profile.fish"
+  assert_line "sourcing profile.tcsh"
+  refute_line "sourcing profile.zsh"
+  assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
+  assert_line "baz"
+}
+
+# bats test_tags=activate,activate:inplace-modifies
+@test "'flox activate' modifies the current shell (fish)" {
+  # set profile scripts
+  sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  # set a hook
+  sed -i -e "s/^\[hook\]/${VARS_HOOK_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  # set vars
+  sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  "$FLOX_BIN" install hello
+
+  run fish -c 'eval "$("$FLOX_BIN" activate)"; type hello; echo $foo'
+  assert_success
+  assert_line "sourcing hook.on-activate"
+  assert_line "sourcing profile.common"
+  assert_line "sourcing profile.bash"
+  assert_line "sourcing profile.fish"
+  assert_line "sourcing profile.tcsh"
+  refute_line "sourcing profile.zsh"
+  assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
+  assert_line "baz"
+}
+
+# bats test_tags=activate,activate:inplace-modifies
+@test "'flox activate' modifies the current shell (tcsh)" {
+  # set profile scripts
+  sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  # set a hook
+  sed -i -e "s/^\[hook\]/${VARS_HOOK_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  # set vars
+  sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
+  "$FLOX_BIN" install hello
+
+  run tcsh -c 'eval "$("$FLOX_BIN" activate)"; type hello; echo $foo'
+  assert_success
+  assert_line "sourcing hook.on-activate"
+  assert_line "sourcing profile.common"
+  assert_line "sourcing profile.bash"
+  assert_line "sourcing profile.fish"
+  assert_line "sourcing profile.tcsh"
   refute_line "sourcing profile.zsh"
   assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
   assert_line "baz"
@@ -322,7 +510,6 @@ env_is_activated() {
 
 # bats test_tags=activate,activate:inplace-modifies
 @test "'flox activate' modifies the current shell (zsh)" {
-
   # set profile scripts
   sed -i -e "s/^\[profile\]/${HELLO_PROFILE_SCRIPT//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   # set a hook
@@ -336,6 +523,8 @@ env_is_activated() {
   assert_line "sourcing hook.on-activate"
   assert_line "sourcing profile.common"
   refute_line "sourcing profile.bash"
+  refute_line "sourcing profile.fish"
+  refute_line "sourcing profile.tcsh"
   assert_line "sourcing profile.zsh"
   assert_line --partial "hello is $(realpath $PROJECT_DIR)/.flox/run/"
   assert_line "baz"
@@ -346,6 +535,36 @@ env_is_activated() {
 # bats test_tags=activate,activate:inplace-reactivate
 @test "bash: 'flox activate' only patches PATH when already activated" {
   SHELL="bash" run bash -c 'eval "$("$FLOX_BIN" activate --print-script)"; "$FLOX_BIN" activate --print-script'
+  assert_success
+  # on macos activating an already activated environment using
+  # `eval "$(flox activate [--print-script])"
+  # will only fix the PATH
+  if [[ -e /usr/libexec/path_helper ]]; then
+    assert_output --regexp "^(export PATH=.+)$"
+  else
+    # on linux reactivation is ignored
+    assert_output ""
+  fi
+}
+
+# bats test_tags=activate,activate:inplace-reactivate
+@test "fish: 'flox activate' only patches PATH when already activated" {
+  SHELL="fish" run fish -c 'eval "$("$FLOX_BIN" activate --print-script)"; "$FLOX_BIN" activate --print-script'
+  assert_success
+  # on macos activating an already activated environment using
+  # `eval "$(flox activate [--print-script])"
+  # will only fix the PATH
+  if [[ -e /usr/libexec/path_helper ]]; then
+    assert_output --regexp "^(export PATH=.+)$"
+  else
+    # on linux reactivation is ignored
+    assert_output ""
+  fi
+}
+
+# bats test_tags=activate,activate:inplace-reactivate
+@test "tcsh: 'flox activate' only patches PATH when already activated" {
+  SHELL="tcsh" run tcsh -c 'eval "$("$FLOX_BIN" activate --print-script)"; "$FLOX_BIN" activate --print-script'
   assert_success
   # on macos activating an already activated environment using
   # `eval "$(flox activate [--print-script])"
@@ -504,6 +723,32 @@ env_is_activated() {
   # 'profile.bash' creates a directory named after the contents of that
   # variable, suffixed by '-bash'
   [ -d common-bash ]
+}
+
+# ---------------------------------------------------------------------------- #
+
+@test "fish: 'profile.common' is sourced before 'profile.fish'" {
+  "$FLOX_BIN" delete -f
+  "$FLOX_BIN" init
+  "$FLOX_BIN" edit -f "$BATS_TEST_DIRNAME/activate/profile-order.toml"
+  FLOX_SHELL=fish NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/simple.exp" "$PROJECT_DIR"
+  # 'profile.common' sets a var containing "common",
+  # 'profile.fish' creates a directory named after the contents of that
+  # variable, suffixed by '-fish'
+  [ -d common-fish ]
+}
+
+# ---------------------------------------------------------------------------- #
+
+@test "tcsh: 'profile.common' is sourced before 'profile.tcsh'" {
+  "$FLOX_BIN" delete -f
+  "$FLOX_BIN" init
+  "$FLOX_BIN" edit -f "$BATS_TEST_DIRNAME/activate/profile-order.toml"
+  FLOX_SHELL=tcsh NO_COLOR=1 run -0 expect "$TESTS_DIR/activate/simple.exp" "$PROJECT_DIR"
+  # 'profile.common' sets a var containing "common",
+  # 'profile.tcsh' creates a directory named after the contents of that
+  # variable, suffixed by '-tcsh'
+  [ -d common-tcsh ]
 }
 
 # ---------------------------------------------------------------------------- #

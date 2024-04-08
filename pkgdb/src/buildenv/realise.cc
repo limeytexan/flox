@@ -43,12 +43,8 @@ namespace flox::buildenv {
 #  error "PROFILE_D_SCRIPTS_DIR must be set to the path of `etc/profile.d/'"
 #endif
 
-#ifndef SET_PROMPT_BASH_SH
-#  error "SET_PROMPT_BASH_SH must be set to the path of `set-prompt.bash.sh'"
-#endif
-
-#ifndef SET_PROMPT_ZSH_SH
-#  error "SET_PROMPT_ZSH_SH must be set to the path of `set-prompt.zsh.sh'"
+#ifndef ACTIVATE_D_SCRIPTS_DIR
+#  error "ACTIVATE_D_SCRIPTS_DIR must be set to the path of `activate.d'"
 #endif
 
 #ifndef CONTAINER_BUILDER_PATH
@@ -82,7 +78,8 @@ namespace flox::buildenv {
 // Top-level activate script, always invoked with nix bash.
 const char * const ACTIVATE_SCRIPT = R"_(
 # Flox environment activation script.
-[ ${_FLOX_PKGDB_VERBOSITY:-0} -eq 0 ] || set -x
+_FLOX_PKGDB_VERBOSITY=${_FLOX_PKGDB_VERBOSITY:-0}
+[ $_FLOX_PKGDB_VERBOSITY -eq 0 ] || set -x
 
 # Capture starting environment.
 _start_env="$($_coreutils/bin/mktemp --suffix=.start-env)"
@@ -160,13 +157,19 @@ if [ -t 1 ]; then
       exec "$FLOX_SHELL" --rcfile "$FLOX_ENV/activate.d/bash"
       ;;
     *zsh)
-      export ZDOTDIR="$FLOX_ZDOTDIR"
+      export FLOX_ORIG_ZDOTDIR="$ZDOTDIR"
+      export ZDOTDIR="$_zdotdir"
       export FLOX_ZSH_INIT_SCRIPT="$FLOX_ENV/activate.d/zsh"
       exec "$FLOX_SHELL"
       ;;
     *fish)
-      # TODO: test fish support
-      exec "$FLOX_SHELL" "$FLOX_ENV/activate.d/fish"
+      exec "$FLOX_SHELL" --init-command "source $FLOX_ENV/activate.d/fish"
+      ;;
+    *tcsh)
+      export FLOX_ORIG_HOME="$HOME"
+      export HOME="$_tcsh_home"
+      export FLOX_TCSH_INIT_SCRIPT="$FLOX_ENV/activate.d/tcsh"
+      exec "$FLOX_SHELL"
       ;;
     *)
       echo "Unsupported shell: $FLOX_SHELL" >&2
@@ -191,7 +194,20 @@ case "$FLOX_SHELL" in
       $_gnused/bin/sed -e 's/declare -x/export/'
     ;;
   *fish)
-    echo TODO: fish support
+    # TODO: weed out unset statements for the exports to follow.
+    $_coreutils/bin/comm -23 "$_start_env" "$_end_env" | \
+      $_gnused/bin/sed -e 's/declare -x/set -e/' -e 's/=.*//'
+    # Use "export" for env additions.
+    $_coreutils/bin/comm -13 "$_start_env" "$_end_env" | \
+      $_gnused/bin/sed -e 's/declare -x/set -gx/' -e 's/=/ /'
+    ;;
+  *tcsh)
+    # TODO: weed out unset statements for the exports to follow.
+    $_coreutils/bin/comm -23 "$_start_env" "$_end_env" | \
+      $_gnused/bin/sed -e 's/declare -x/unsetenv/' -e 's/=.*//'
+    # Use "export" for env additions.
+    $_coreutils/bin/comm -13 "$_start_env" "$_end_env" | \
+      $_gnused/bin/sed -e 's/declare -x/setenv/' -e 's/=/ /'
     ;;
   *)
     echo "Unsupported shell: $FLOX_SHELL" >&2
@@ -202,8 +218,9 @@ esac
 # Finish by echoing the contents of the shell-specific activation script.
 case "$FLOX_SHELL" in
   *bash) echo "$( <"$FLOX_ENV/activate.d/bash" )";;
-  *zsh)  echo "$( <"$FLOX_ENV/activate.d/zsh"  )";;
   *fish) echo "$( <"$FLOX_ENV/activate.d/fish" )";;
+  *tcsh) echo "$( <"$FLOX_ENV/activate.d/tcsh" )";;
+  *zsh)  echo "$( <"$FLOX_ENV/activate.d/zsh"  )";;
   *)     echo "unsupported shell: $FLOX_SHELL" >&2; exit 1;;
 esac
 
@@ -216,7 +233,7 @@ cleanup
  * in case it's used in the prior scripts (e.g. ~/.bashrc).
  */
 const char * const BASH_ACTIVATE_SCRIPT = R"(
-[ ${_FLOX_PKGDB_VERBOSITY:-0} -le 1 ] || set -x
+[ $_FLOX_PKGDB_VERBOSITY -le 1 ] || set -x
 
 # We use --rcfile to activate using bash which skips sourcing ~/.bashrc,
 # so source that here.
@@ -225,18 +242,60 @@ then
     source ~/.bashrc
 fi
 
-# Disable command hashing to allow for newly installed flox packages to be found
-# immediately.
+# Disable command hashing to allow for newly installed flox packages
+# to be found immediately.
 set +h
 )";
 
 
-// unlike bash, zsh activation calls this script from the user's shell rcfile
-const char * const ZSH_ACTIVATE_SCRIPT = R"(
-[ ${_FLOX_PKGDB_VERBOSITY:-0} -le 1 ] || set -x
+const char * const FISH_ACTIVATE_SCRIPT = R"(
+# Set verbosity level with a default of 0 if not already set
+if test $_FLOX_PKGDB_VERBOSITY -ge 1
+    set -gx fish_trace 1
+end
 
-# Disable command hashing to allow for newly installed flox packages to be found
-# immediately.
+# The fish --init-command option allows us to source our startup
+# file after the normal configuration has been processed, so there
+# is no requirement to go back and source the user's own config
+# as we do in bash.
+
+# fish does not use hashing in the same way bash does, so there's
+# nothing to do by way of that either.
+)";
+
+
+const char * const TCSH_ACTIVATE_SCRIPT = R"(
+if ( $_FLOX_PKGDB_VERBOSITY >= 1 ) then
+    set verbose
+endif
+
+# We invoke tcsh with -f to prevent the user and system-wide
+# config files from coming back and overriding the environment
+# that we're trying to set up here, so we start by sourcing
+# these files ourselves prior to setting up the environment.
+if ( ! $?FLOX_SOURCED_FROM_SHELL_RC ) then
+    foreach f ( /etc/csh.login /etc/csh.cshrc ~/.cshrc ~/.tcshrc )
+        if ( -f $f ) then
+            source $f
+        endif
+    end
+endif
+
+# Disable command hashing to allow for newly installed flox packages
+# to be found immediately.
+unhash
+)";
+
+
+const char * const ZSH_ACTIVATE_SCRIPT = R"(
+[ $_FLOX_PKGDB_VERBOSITY -le 1 ] || set -x
+
+# The zsh activation calls this script from the user's shell rcfile
+# so there is no requirement to go back and source the user's own
+# config as we do in bash.
+
+# Disable command hashing to allow for newly installed flox packages
+# to be found immediately.
 setopt nohashcmds
 setopt nohashdirs
 )";
@@ -257,7 +316,7 @@ addDirToStore( nix::EvalState &    state,
   auto narHash = hashString( nix::htSHA256, sink.s );
   nix::ValidPathInfo info {
             *state.store,
-            "FloxEnv",
+            "environment",
             nix::FixedOutputInfo {
                 .method = nix::FileIngestionMethod::Recursive,
                 .hash = narHash,
@@ -774,6 +833,10 @@ addActivationScript( const std::filesystem::path & tempDir )
   scriptTmpFile << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl;
   scriptTmpFile << "_gnused=" << FLOX_GNUSED_PKG << std::endl;
   scriptTmpFile << "_procps=" << FLOX_PROCPS_PKG << std::endl;
+  scriptTmpFile << "_zdotdir=" << ACTIVATE_D_SCRIPTS_DIR << "/zdotdir"
+                << std::endl;
+  scriptTmpFile << "_tcsh_home=" << ACTIVATE_D_SCRIPTS_DIR << "/tcsh_home"
+                << std::endl;
   scriptTmpFile << ACTIVATE_SCRIPT;
   if ( scriptTmpFile.fail() )
     {
@@ -853,15 +916,8 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
   std::stringstream bashScript;
   std::stringstream envrcScript;
   std::stringstream fishScript;
+  std::stringstream tcshScript;
   std::stringstream zshScript;
-
-  /* Add the preambles */
-  bashScript << BASH_ACTIVATE_SCRIPT << "\n";
-  bashScript << "source " << SET_PROMPT_BASH_SH << "\n";
-  // fishScript << FISH_ACTIVATE_SCRIPT << "\n";
-  // fishScript << "source " << SET_PROMPT_FISH_SH << "\n";
-  zshScript << ZSH_ACTIVATE_SCRIPT << "\n";
-  zshScript << "source " << SET_PROMPT_ZSH_SH << "\n";
 
   auto manifest = lockfile.getManifest().getManifestRaw();
 
@@ -895,6 +951,20 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
       addScriptToScriptsDir( envrcScript.str(), tempDir, "envrc" );
     }
 
+  /* Add the shell activate scripts */
+  bashScript << BASH_ACTIVATE_SCRIPT << "\n";
+  bashScript << "source " << ACTIVATE_D_SCRIPTS_DIR << "/set-prompt.bash\n"
+             << "set +x\n";  // disable verbose mode
+  fishScript << FISH_ACTIVATE_SCRIPT << "\n";
+  fishScript << "source " << ACTIVATE_D_SCRIPTS_DIR << "/set-prompt.fish\n"
+             << "set -gx fish_trace 0\n";  // disable verbose mode
+  tcshScript << TCSH_ACTIVATE_SCRIPT << "\n";
+  tcshScript << "source " << ACTIVATE_D_SCRIPTS_DIR << "/set-prompt.tcsh\n"
+             << "unset verbose\n";  // disable verbose mode
+  zshScript << ZSH_ACTIVATE_SCRIPT << "\n";
+  zshScript << "source " << ACTIVATE_D_SCRIPTS_DIR << "/set-prompt.zsh\n"
+            << "set +x\n";  // disable verbose mode
+
   /* Add profile scripts */
   auto profile = manifest.profile;
   if ( profile.has_value() )
@@ -904,6 +974,8 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
           debugLog( "adding 'profile.common' to activation scripts" );
           addScriptToScriptsDir( *profile->common, tempDir, "profile-common" );
           appendSourcedScript( "profile-common", bashScript );
+          appendSourcedScript( "profile-common", fishScript );
+          appendSourcedScript( "profile-common", tcshScript );
           appendSourcedScript( "profile-common", zshScript );
         }
       if ( profile->bash.has_value() )
@@ -911,6 +983,18 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
           debugLog( "adding 'profile.bash' to activation scripts" );
           addScriptToScriptsDir( *profile->bash, tempDir, "profile-bash" );
           appendSourcedScript( "profile-bash", bashScript );
+        }
+      if ( profile->fish.has_value() )
+        {
+          debugLog( "adding 'profile.fish' to activation scripts" );
+          addScriptToScriptsDir( *profile->fish, tempDir, "profile-fish" );
+          appendSourcedScript( "profile-fish", fishScript );
+        }
+      if ( profile->tcsh.has_value() )
+        {
+          debugLog( "adding 'profile.tcsh' to activation scripts" );
+          addScriptToScriptsDir( *profile->tcsh, tempDir, "profile-tcsh" );
+          appendSourcedScript( "profile-tcsh", tcshScript );
         }
       if ( profile->zsh.has_value() )
         {
@@ -932,6 +1016,8 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
           debugLog( "adding 'hook.script' to activation scripts" );
           addScriptToScriptsDir( *hook->script, tempDir, "hook-script" );
           appendSourcedScript( "hook-script", bashScript );
+          appendSourcedScript( "hook-script", fishScript );
+          appendSourcedScript( "hook-script", tcshScript );
           appendSourcedScript( "hook-script", zshScript );
         }
 
@@ -946,6 +1032,8 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
 
   /* Add the shell-specific scripts to the scripts directory */
   addScriptToScriptsDir( bashScript.str(), tempDir, "bash" );
+  addScriptToScriptsDir( fishScript.str(), tempDir, "fish" );
+  addScriptToScriptsDir( tcshScript.str(), tempDir, "tcsh" );
   addScriptToScriptsDir( zshScript.str(), tempDir, "zsh" );
 
   /* Add top-level activate script */
@@ -960,8 +1048,7 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
                             buildenv::Priority() );
   auto            references = nix::StorePathSet();
   references.insert( activationStorePath );
-  references.insert( state.store->parseStorePath( SET_PROMPT_BASH_SH ) );
-  references.insert( state.store->parseStorePath( SET_PROMPT_ZSH_SH ) );
+  references.insert( state.store->parseStorePath( ACTIVATE_D_SCRIPTS_DIR ) );
   references.insert( state.store->parseStorePath( FLOX_BASH_PKG ) );
   references.insert( state.store->parseStorePath( FLOX_COREUTILS_PKG ) );
   references.insert( state.store->parseStorePath( FLOX_GNUSED_PKG ) );

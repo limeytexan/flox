@@ -9,7 +9,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use bpaf::Bpaf;
 use crossterm::tty::IsTty;
 use flox_rust_sdk::flox::Flox;
@@ -359,6 +359,12 @@ impl Activate {
                     .arg("--rcfile")
                     .arg(activation_path.join("activate").join("bash"));
             },
+            Shell::Fish(_) => {
+                return Err(anyhow!("Unsupported shell: fish"));
+            },
+            Shell::Tcsh(_) => {
+                return Err(anyhow!("Unsupported shell: tcsh"));
+            },
             Shell::Zsh(_) => {
                 // From man zsh:
                 // Commands are then read from $ZDOTDIR/.zshenv.  If the shell is a
@@ -384,7 +390,10 @@ impl Activate {
                     command.env("FLOX_ORIG_ZDOTDIR", zdotdir);
                 }
                 command
-                    .env("ZDOTDIR", env!("FLOX_ZDOTDIR"))
+                    .env(
+                        "ZDOTDIR",
+                        activation_path.join("activate.d").join("zdotdir"),
+                    )
                     .env(
                         "FLOX_ZSH_INIT_SCRIPT",
                         activation_path.join("activate").join("zsh"),
@@ -601,15 +610,29 @@ impl Activate {
         let output = command.output().expect("failed to run activation script");
         eprint!("{}", String::from_utf8_lossy(&output.stderr));
 
-        // XXX BUG TODO: this is not correct, we need to know the value of
-        // $FLOX_SHELL in order to know the correct syntax for exporting
-        // variables in the local shell dialect. Turn this into a function
-        // that can do that.
-        let exports_rendered = exports
-            .iter()
-            .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
-            .map(|(key, value)| format!("export {key}={value}",))
-            .join("\n");
+        // Render the exports in the correct shell dialect.
+        let exports_rendered = match shell {
+            Shell::Bash(_) => exports
+                .iter()
+                .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
+                .map(|(key, value)| format!("export {key}={value}",))
+                .join("\n"),
+            Shell::Fish(_) => exports
+                .iter()
+                .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
+                .map(|(key, value)| format!("set -gx {key} {value}",))
+                .join("\n"),
+            Shell::Tcsh(_) => exports
+                .iter()
+                .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
+                .map(|(key, value)| format!("setenv {key} {value}",))
+                .join("\n"),
+            Shell::Zsh(_) => exports
+                .iter()
+                .map(|(key, value)| (key, shell_escape::escape(Cow::Borrowed(value))))
+                .map(|(key, value)| format!("export {key}={value}",))
+                .join("\n"),
+        };
 
         let script = formatdoc! {"
             # Common flox environment variables

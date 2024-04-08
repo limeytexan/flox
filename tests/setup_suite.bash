@@ -446,9 +446,9 @@ setup_suite() { common_suite_setup; }
 # Run on exit after all other `*teardown' routines.
 common_suite_teardown() {
   # Delete suite tmpdir and envs unless the user requests to preserve them.
-  # if [[ -z "${FLOX_TEST_KEEP_TMP:-}" ]]; then
-  #   rm -rf "$BATS_SUITE_TMPDIR"
-  # fi
+  if [[ -z "${FLOX_TEST_KEEP_TMP:-}" ]]; then
+    rm -rf "$BATS_SUITE_TMPDIR"
+  fi
   # Our agent was useful, but it's time for them to retire.
   # We force true in case we are tearing down when an agent never launched.
   eval "$(ssh-agent -k 2> /dev/null || echo ':')"
@@ -457,7 +457,7 @@ common_suite_teardown() {
   # I can't imagine what anyone would ever do with them, but I'm not interested
   # in learning about some esoteric new exploit in an
   # incident response situation because I left them laying around.
-  # rm -rf "$BATS_RUN_TMPDIR/homeless-shelter"
+  rm -rf "$BATS_RUN_TMPDIR/homeless-shelter"
 }
 
 # Recognized by `bats'.

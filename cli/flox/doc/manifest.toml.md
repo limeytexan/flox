@@ -316,7 +316,7 @@ immediately following any `[hook]` invocations, and consequently inherit environ
 variables both set in those scripts and from the `[vars]` section above.
 The `profile.common` script is sourced by all shells
 and must therefore be compatible with all shells.
-The `profile.bash` and `profile.zsh` scripts will only be sourced
+The `profile.{bash,fish,tcsh,zsh}` scripts will only be sourced
 by the corresponding shell after sourcing the `profile.common` script.
 
 These scripts are useful for performing shell-specific customizations
@@ -335,6 +335,16 @@ bash = """
     set -o vi
     alias foo="echo bar"
 """
+fish = """
+    source $venv_dir/bin/activate.fish
+    fish_vi_key_bindings
+    alias foo="echo bar"
+"""
+tcsh = """
+    source $venv_dir/bin/activate.tcsh
+    bindkey -v
+    alias foo "echo bar"
+"""
 zsh = """
     source $venv_dir/bin/activate
     bindkey -v
@@ -345,8 +355,9 @@ zsh = """
 
 The `profile.common` script is intended to be common setup that can be sourced
 by any shell, but it is your responsibility to make sure that the script is
-compatible with any shells that may consume the environment.  The `profile.bash`
-and `profile.zsh` scripts are sourced *after* the `profile.common` script, and
+compatible with any shells that may consume the environment.
+The `profile.bash`, `profile.fish`, `profile.tcsh` and `profile.zsh` scripts
+are sourced *after* the `profile.common` script, and
 are only sourced by the corresponding shell.  The shell-specific profile scripts
 are intended to contain any shell functions, aliases, variables, etc that could
 be specific to a user's shell.

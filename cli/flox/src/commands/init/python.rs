@@ -333,7 +333,6 @@ impl Provider for PoetryPyProject {
 
         InitCustomization {
             script: Some(
-                // TODO: when we support fish, we'll need to source activate.fish
                 indoc! {r#"
                 # Setup a Python virtual environment
 
@@ -507,7 +506,6 @@ impl Provider for PyProject {
 
         InitCustomization {
             script: Some(
-                // TODO: when we support fish, we'll need to source activate.fish
                 indoc! {r#"
                 # Setup a Python virtual environment
 
@@ -635,7 +633,6 @@ impl Provider for Requirements {
             .join("\n");
         InitCustomization {
             script: Some(
-                // TODO: when we support fish, we'll need to source activate.fish
                 formatdoc! {r#"
                 # Setup a Python virtual environment
 

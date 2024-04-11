@@ -77,15 +77,9 @@
       joined;
 
     # Used by `buildenv' to set shell prompts on activation.
-    SET_PROMPT_BASH_SH = builtins.path {
-      name = "set-prompt.bash.sh";
-      path = ../../pkgdb/src/buildenv/assets/set-prompt.bash.sh;
-    };
-
-    # Used by `buildenv' to set shell prompts on activation.
-    SET_PROMPT_ZSH_SH = builtins.path {
-      name = "set-prompt.zsh.sh";
-      path = ../../pkgdb/src/buildenv/assets/set-prompt.zsh.sh;
+    ACTIVATE_D_SCRIPTS_DIR = builtins.path {
+      name = "flox-activate.d";
+      path = ../../pkgdb/src/buildenv/assets/activate.d;
     };
 
     # Used by `buildenv --container' to create a container builder script.
@@ -181,7 +175,7 @@ in
         runHook preConfigure;
         export PREFIX="$out";
         echo "PROFILE_D_SCRIPTS_DIR: $PROFILE_D_SCRIPTS_DIR" >&2;
-        echo "SET_PROMPT_BASH_SH: $SET_PROMPT_BASH_SH" >&2;
+        echo "ACTIVATE_D_SCRIPTS_DIR: $ACTIVATE_D_SCRIPTS_DIR" >&2;
         if [[ "''${enableParallelBuilding:-1}" = 1 ]]; then
           makeFlagsArray+=( "-j''${NIX_BUILD_CORES:?}" );
         fi

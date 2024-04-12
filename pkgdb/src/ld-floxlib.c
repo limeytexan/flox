@@ -59,6 +59,10 @@ __asm__( ".symver strtok,strtok@GLIBC_2.2.5" );
 static int  audit_ld_floxlib = -1;
 static int  debug_ld_floxlib = -1;
 static char name_buf[PATH_MAX];
+static int  flox_env_lib_dirs_count = -1;
+static char flox_env_lib_dirs_buf[PATH_MAX];  // or longest env var limit?
+static char *
+  flox_env_lib_dirs[256];  // equivalent of max layers in container world
 
 unsigned int
 la_version( unsigned int version )
@@ -97,53 +101,88 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
       if ( fd != -1 ) { close( fd ); }
       else
         {
-          char * basename          = strrchr( name, '/' );
-          char * flox_env_lib_dirs = getenv( "FLOX_ENV_LIB_DIRS" );
-
+          char * basename = strrchr( name, '/' );
           if ( basename != NULL ) { basename++; }
           else { basename = (char *) name; }
 
-          if ( flox_env_lib_dirs != NULL )
+          if ( flox_env_lib_dirs_count == -1 )
             {
-              // Iterate over the colon-separated list of paths in
-              // FLOX_ENV_LIB_DIRS looking for the requested library.
-              // If found, return the full path to the library and
-              // otherwise return the original name.
-              char * flox_env_library_dir = NULL;
-              flox_env_library_dir        = strtok( flox_env_lib_dirs, ":" );
-              while ( flox_env_library_dir != NULL )
+              // Parse the contents of the FLOX_ENV_LIB_DIRS variable
+              // just once into the flox_env_lib_dirs_buf buffer, and
+              // tokenize the buffer by replacing colons with NULLs
+              // as we count the entries, saving each of the pointers
+              // in the flox_env_lib_dirs[] array.
+              flox_env_lib_dirs_count = 0;
+              const char * flox_env_lib_dirs_env
+                = getenv( "FLOX_ENV_LIB_DIRS" );
+              if ( flox_env_lib_dirs_env != NULL )
                 {
-                  (void) snprintf( name_buf,
-                                   sizeof( name_buf ),
-                                   "%s/%s",
-                                   flox_env_library_dir,
-                                   basename );
-                  if ( debug_ld_floxlib )
+                  strcpy( flox_env_lib_dirs_buf, flox_env_lib_dirs_env );
+
+                  // Iterate over the colon-separated list of paths in
+                  // the flox_env_lib_dirs buffer, tokenizing as we go
+                  // and counting the number of entries.
+                  char * flox_env_library_dir = NULL;
+                  char * saveptr              = NULL;  // For strtok_r() context
+
+                  flox_env_library_dir
+                    = strtok_r( flox_env_lib_dirs_buf, ":", &saveptr );
+                  while ( flox_env_library_dir != NULL )
                     {
-                      fprintf( stderr,
-                               "DEBUG: la_objsearch() checking: %s\n",
-                               name_buf );
-                    }
-                  fd = open( name_buf, O_RDONLY );
-                  if ( fd != -1 )
-                    {
-                      close( fd );
-                      if ( audit_ld_floxlib < 0 )
-                        {
-                          audit_ld_floxlib
-                            = ( getenv( "LD_FLOXLIB_AUDIT" ) != NULL );
-                        }
-                      if ( audit_ld_floxlib || debug_ld_floxlib )
+                      if ( debug_ld_floxlib )
                         {
                           fprintf( stderr,
-                                   "AUDIT: la_objsearch() resolved %s -> %s\n",
-                                   name,
-                                   name_buf );
+                                   "DEBUG: la_objsearch() "
+                                   "flox_env_lib_dirs[%d] = %s\n",
+                                   flox_env_lib_dirs_count,
+                                   flox_env_library_dir );
                         }
-                      return name_buf;
+                      flox_env_lib_dirs[flox_env_lib_dirs_count]
+                        = flox_env_library_dir;
+                      flox_env_library_dir = strtok_r( NULL, ":", &saveptr );
+                      flox_env_lib_dirs_count++;
                     }
-                  flox_env_library_dir = strtok( NULL, ":" );
                 }
+            }
+
+          // Iterate over the list of paths in flox_env_lib_dirs
+          // looking for the requested library.
+          // If found, return the full path to the library and
+          // otherwise return the original name.
+          static int i;
+          for ( i = 0; i < flox_env_lib_dirs_count; i++ )
+            {
+              {
+                (void) snprintf( name_buf,
+                                 sizeof( name_buf ),
+                                 "%s/%s",
+                                 flox_env_lib_dirs[i],
+                                 basename );
+                if ( debug_ld_floxlib )
+                  {
+                    fprintf( stderr,
+                             "DEBUG: la_objsearch() checking: %s\n",
+                             name_buf );
+                  }
+                fd = open( name_buf, O_RDONLY );
+                if ( fd != -1 )
+                  {
+                    close( fd );
+                    if ( audit_ld_floxlib < 0 )
+                      {
+                        audit_ld_floxlib
+                          = ( getenv( "LD_FLOXLIB_AUDIT" ) != NULL );
+                      }
+                    if ( audit_ld_floxlib || debug_ld_floxlib )
+                      {
+                        fprintf( stderr,
+                                 "AUDIT: la_objsearch() resolved %s -> %s\n",
+                                 name,
+                                 name_buf );
+                      }
+                    return name_buf;
+                  }
+              }
             }
         }
     }

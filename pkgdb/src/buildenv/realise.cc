@@ -73,6 +73,23 @@ namespace flox::buildenv {
 #  error "FLOX_PROCPS_PKG must be set to the path of the nix procps package"
 #endif
 
+#ifndef FLOX_CACERT_PKG
+#  error "FLOX_CACERT_PKG must be set to the path of the nixpkgs cacert package"
+#endif
+
+#ifdef linux
+#  ifndef FLOX_LOCALE_ARCHIVE
+#    error "FLOX_LOCALE_ARCHIVE_PKG must be set to the LOCALE_ARCHIVE variable"
+#  endif
+#else // darwin
+#  ifndef FLOX_PATH_LOCALE
+#    error "FLOX_PATH_LOCALE_PKG must be set to the PATH_LOCALE variable"
+#  endif
+#  ifndef FLOX_NIX_COREFOUNDATION_RPATH
+#    error "FLOX_NIX_COREFOUNDATION_RPATH must be set to the NIX_COREFOUNDATION_RPATH variable"
+#  endif
+#endif
+
 /* -------------------------------------------------------------------------- */
 
 // Top-level activate script, always invoked with nix bash.
@@ -950,6 +967,19 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
   /* Add environment variables. */
   if ( auto vars = manifest.vars )
     {
+      // XXX Really need to find better way to master these variables.
+      envrcScript << "# Default environment variables\n"
+                  << "export SSL_CERT_FILE=\"${SSL_CERT_FILE:-"
+                  << FLOX_CACERT_PKG << "/etc/ssl/certs/ca-bundle.crt}\"\n"
+                  << "export NIX_SSL_CERT_FILE=\"${NIX_SSL_CERT_FILE:-${SSL_CERT_FILE}}\"\n";
+#ifdef __linux__
+      envrcScript << "export LOCALE_ARCHIVE=\"${LOCALE_ARCHIVE:-" << FLOX_LOCALE_ARCHIVE << "}\"\n";
+#else
+      envrcScript << "export NIX_COREFOUNDATION_RPATH=\"${NIX_COREFOUNDATION_RPATH:-"
+                  << FLOX_NIX_COREFOUNDATION_RPATH << "}\"\n"
+                  << "export PATH_LOCALE=\"${PATH_LOCALE:-" << FLOX_PATH_LOCALE << "}\"\n";
+#endif
+
       envrcScript << "# Static environment variables" << std::endl;
       for ( auto [name, value] : vars.value() )
         {
@@ -1061,6 +1091,7 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
   references.insert( state.store->parseStorePath( FLOX_COREUTILS_PKG ) );
   references.insert( state.store->parseStorePath( FLOX_GNUSED_PKG ) );
   references.insert( state.store->parseStorePath( FLOX_PROCPS_PKG ) );
+  references.insert( state.store->parseStorePath( FLOX_CACERT_PKG ) );
 
   return { realised, references };
 }

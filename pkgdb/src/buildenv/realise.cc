@@ -90,31 +90,66 @@ export | $_coreutils/bin/sort > "$_start_env"
 FLOX_ENV="$( $_coreutils/bin/dirname -- "${BASH_SOURCE[0]}" )"
 export FLOX_ENV
 
-# Process the flox environment customizations, which includes (amongst
-# other things) prepending this environment's bin directory to the PATH.
-if [ -d "$FLOX_ENV/etc/profile.d" ]; then
-  declare -a _prof_scripts;
-  _prof_scripts=( $(
-    cd "$FLOX_ENV/etc/profile.d";
-    shopt -s nullglob;
-    echo *.sh;
-  ) );
-  for p in "${_prof_scripts[@]}"; do . "$FLOX_ENV/etc/profile.d/$p"; done
-  unset _prof_scripts;
-fi
+# Set all other variables derived from FLOX_ENV. We previously did this
+# from within the rust CLI but we've moved it to this top-level activation
+# script so that it can be invoked without using the flox CLI, e.g. as
+# required when invoking the environment from a container entrypoint.
 
-# Set static environment variables from the manifest.
-if [ -f "$FLOX_ENV/activate.d/envrc" ]; then
-  source "$FLOX_ENV/activate.d/envrc"
-fi
+# Identify if this environment has been activated before. If it has,
+# then it will appear as an element in the colon-separated FLOX_ENV_DIRS
+# variable, and if it hasn't then we'll prepend it to the list and set
+# all the other related env variables.
+declare -a flox_env_dirs
+IFS=: read -ra flox_env_dirs <<< "$FLOX_ENV_DIRS"
+declare -i flox_env_found=0
+for d in "${flox_env_dirs[@]}"; do
+  if [ "$d" = "$FLOX_ENV" ]; then
+    flox_env_found=1
+    break
+  fi
+done
+if [ $flox_env_found -eq 1 ]; then
+  if [ -t 1 ]; then
+    # If we're in an interactive shell, then we'll just print a message
+    # to the user to let them know that the environment has already been
+    # activated.
+    echo "ERROR: Flox environment already activated: $FLOX_ENV" >&2
+    exit 1
+  fi
+else
+  FLOX_ENV_DIRS="$FLOX_ENV:$FLOX_ENV_DIRS"
+  export FLOX_ENV_DIRS
+  FLOX_ENV_LIB_DIRS="$FLOX_ENV/lib:$FLOX_ENV_LIB_DIRS"
+  export FLOX_ENV_LIB_DIRS
+  # XXX FIXME FLOX_PROMPT_ENVIRONMENTS="$FLOX_PROMPT $FLOX_PROMPT_ENVIRONMENTS"
+  # XXX FIXME export FLOX_PROMPT_ENVIRONMENTS
 
-# Source the hook-on-activate script if it exists.
-if [ -e "$FLOX_ENV/activate.d/hook-on-activate" ]; then
-  # Nothing good can come from output printed to stdout in the
-  # user-provided hook scripts because these can get interpreted
-  # as configuration statements by the "in-place" activation
-  # mode. So, we'll redirect stdout to stderr.
-  source "$FLOX_ENV/activate.d/hook-on-activate" 1>&2
+  # Process the flox environment customizations, which includes (amongst
+  # other things) prepending this environment's bin directory to the PATH.
+  if [ -d "$FLOX_ENV/etc/profile.d" ]; then
+    declare -a _prof_scripts;
+    _prof_scripts=( $(
+      cd "$FLOX_ENV/etc/profile.d";
+      shopt -s nullglob;
+      echo *.sh;
+    ) );
+    for p in "${_prof_scripts[@]}"; do . "$FLOX_ENV/etc/profile.d/$p"; done
+    unset _prof_scripts;
+  fi
+
+  # Set static environment variables from the manifest.
+  if [ -f "$FLOX_ENV/activate.d/envrc" ]; then
+    source "$FLOX_ENV/activate.d/envrc"
+  fi
+
+  # Source the hook-on-activate script if it exists.
+  if [ -e "$FLOX_ENV/activate.d/hook-on-activate" ]; then
+    # Nothing good can come from output printed to stdout in the
+    # user-provided hook scripts because these can get interpreted
+    # as configuration statements by the "in-place" activation
+    # mode. So, we'll redirect stdout to stderr.
+    source "$FLOX_ENV/activate.d/hook-on-activate" 1>&2
+  fi
 fi
 
 # Capture ending environment.
@@ -145,10 +180,9 @@ $_coreutils/bin/rm -f "$_start_env" "$_end_env"
 
 # From this point on the activation process depends on the mode:
 
-# 1. "turbo command" mode: simply exec the provided command and args
+# 1. "turbo" mode: simply exec the provided command and args
 #    without paying the cost of invoking the userShell.
 #    TODO: discuss, then remove or plumb this through the CLI if necessary
-#    TODO: add "command" mode which appends 'exec "$@"' to the userShell script
 FLOX_TURBO=always
 if [ $# -gt 0 -a -n "$FLOX_TURBO" ]; then
   $_coreutils/bin/rm -f "$_add_env" "$_del_env"

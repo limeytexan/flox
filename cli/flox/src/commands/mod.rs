@@ -1267,19 +1267,9 @@ impl ActiveEnvironments {
         self.0.front().cloned()
     }
 
-    /// Set the last active environment
-    pub fn set_last_active(&mut self, env: UninitializedEnvironment) {
-        self.0.push_front(env);
-    }
-
     /// Check if the given environment is active
     pub fn is_active(&self, env: &UninitializedEnvironment) -> bool {
         self.0.contains(env)
-    }
-
-    /// Iterate over the active environments
-    pub fn iter(&self) -> impl Iterator<Item = &UninitializedEnvironment> {
-        self.0.iter()
     }
 }
 

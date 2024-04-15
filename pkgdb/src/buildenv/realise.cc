@@ -92,6 +92,17 @@ namespace flox::buildenv {
 
 /* -------------------------------------------------------------------------- */
 
+// Helpful macro for appending bash-syntax code to append a conditional
+// assignment to an initialization script. For instance, to set the
+// SSL_CERT_FILE environment variable, but only if it is not already set,
+// we append the following to the bash script:
+//
+//   export SSL_CERT_FILE="${SSL_CERT_FILE:-/path/to/cacert.pem}"
+#define SAFE_SETENV(var, value) \
+  "export " var "=\"${" var ":-" value "}\"\n"
+
+/* -------------------------------------------------------------------------- */
+
 // Top-level activate script, always invoked with nix bash.
 const char * const ACTIVATE_SCRIPT = R"_(
 # Flox environment activation script.
@@ -969,6 +980,7 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
     {
       // XXX Really need to find better way to master these variables.
       envrcScript << "# Default environment variables\n"
+                  << SAFE_SETENV( "FLOX_ENV", FLOX_ENV ) << '\n'
                   << "export SSL_CERT_FILE=\"${SSL_CERT_FILE:-"
                   << FLOX_CACERT_PKG << "/etc/ssl/certs/ca-bundle.crt}\"\n"
                   << "export NIX_SSL_CERT_FILE=\"${NIX_SSL_CERT_FILE:-${SSL_CERT_FILE}}\"\n";

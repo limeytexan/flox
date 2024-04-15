@@ -310,7 +310,7 @@ env_is_activated() {
   sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   "$FLOX_BIN" install hello
 
-  run bash -c '$FLOX_BIN activate | cat; eval "$($FLOX_BIN activate)"; type hello; echo $foo'
+  run bash -c 'eval "$($FLOX_BIN activate)"; type hello; echo $foo'
   assert_success
   assert_line "sourcing hook.on-activate"
   assert_line "sourcing profile.common"

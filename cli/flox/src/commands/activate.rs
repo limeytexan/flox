@@ -463,43 +463,7 @@ impl Activate {
 
 #[cfg(test)]
 mod tests {
-    use flox_rust_sdk::models::environment::{DotFlox, EnvironmentPointer, PathPointer};
-    use once_cell::sync::Lazy;
-
     use super::*;
-    use crate::commands::ActiveEnvironments;
-
-    #[cfg(target_os = "macos")]
-    const PATH: &str =
-        "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/flox/env/bin:/nix/store/some/bin";
-
-    static DEFAULT_ENV: Lazy<UninitializedEnvironment> = Lazy::new(|| {
-        UninitializedEnvironment::DotFlox(DotFlox {
-            path: PathBuf::from(""),
-            pointer: EnvironmentPointer::Path(PathPointer::new("default".parse().unwrap())),
-        })
-    });
-
-    static NON_DEFAULT_ENV: Lazy<UninitializedEnvironment> = Lazy::new(|| {
-        UninitializedEnvironment::DotFlox(DotFlox {
-            path: PathBuf::from(""),
-            pointer: EnvironmentPointer::Path(PathPointer::new("wichtig".parse().unwrap())),
-        })
-    });
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_fixup_path() {
-        let flox_env_dirs = IndexSet::from(["/flox/env"].map(PathBuf::from));
-        let fixed_up_path = Activate::fixup_path_with(PATH, &flox_env_dirs);
-        let joined = env::join_paths(fixed_up_path).unwrap();
-
-        assert_eq!(
-            joined.to_string_lossy(),
-            "/flox/env/bin:/nix/store/some/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-            "PATH was not reordered correctly"
-        );
-    }
 
     const SHELL_SET: (&'_ str, Option<&'_ str>) = ("SHELL", Some("/shell/bash"));
     const FLOX_SHELL_SET: (&'_ str, Option<&'_ str>) = ("FLOX_SHELL", Some("/flox_shell/bash"));

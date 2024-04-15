@@ -25,11 +25,7 @@ use indoc::formatdoc;
 use itertools::Itertools;
 use log::{debug, warn};
 
-use super::{
-    environment_select,
-    EnvironmentSelect,
-    UninitializedEnvironment,
-};
+use super::{environment_select, EnvironmentSelect, UninitializedEnvironment};
 use crate::commands::{ensure_environment_trust, ConcreteEnvironment, EnvironmentSelectError};
 use crate::config::Config;
 use crate::utils::dialog::{Dialog, Spinner};
@@ -142,12 +138,13 @@ impl Activate {
             ),
             ("FLOX_PROMPT_COLOR_1", prompt_color_1),
             ("FLOX_PROMPT_COLOR_2", prompt_color_2),
-	    // Export FLOX_ENV_DESCRIPTION for this environment and let the
-	    // activation script take care of tracking active environments
-	    // and invoking the appropriate script to set the prompt.
+            // Export FLOX_ENV_DESCRIPTION for this environment and let the
+            // activation script take care of tracking active environments
+            // and invoking the appropriate script to set the prompt.
             (
                 FLOX_ENV_DESCRIPTION_VAR,
-                now_active.bare_description()
+                now_active
+                    .bare_description()
                     .expect("`bare_description` is infallible"),
             ),
         ]);

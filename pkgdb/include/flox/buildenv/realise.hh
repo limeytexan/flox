@@ -32,7 +32,7 @@
 // variable, but only if it is not already set.
 //
 // E.g. 'defaultValue("FOO", "bar")' returns: 'export FOO="${FOO:-bar}"\n'
-#define defaultValue(var, value) \
+#define defaultValue( var, value ) \
   "export " var "=\"${" var ":-" value "}\"" << std::endl
 
 // Macro for appending a conditional action to a bash script. This is
@@ -41,7 +41,7 @@
 //
 // E.g. 'posixIfThen("[ -t 1 ]", "echo interactive")' returns:
 //   'if [ -t 1 ]; then echo interactive; fi' (with newlines)
-#define posixIfThen(cond, action) \
+#define posixIfThen( cond, action ) \
   "if " cond "; then\n  " action "\nfi" << std::endl
 
 /* -------------------------------------------------------------------------- */

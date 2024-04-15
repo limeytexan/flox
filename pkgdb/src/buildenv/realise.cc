@@ -81,12 +81,13 @@ namespace flox::buildenv {
 #  ifndef FLOX_LOCALE_ARCHIVE
 #    error "FLOX_LOCALE_ARCHIVE_PKG must be set to the LOCALE_ARCHIVE variable"
 #  endif
-#else // darwin
+#else  // darwin
 #  ifndef FLOX_PATH_LOCALE
 #    error "FLOX_PATH_LOCALE_PKG must be set to the PATH_LOCALE variable"
 #  endif
 #  ifndef FLOX_NIX_COREFOUNDATION_RPATH
-#    error "FLOX_NIX_COREFOUNDATION_RPATH must be set to the NIX_COREFOUNDATION_RPATH variable"
+#    error \
+      "FLOX_NIX_COREFOUNDATION_RPATH must be set to the NIX_COREFOUNDATION_RPATH variable"
 #  endif
 #endif
 
@@ -976,12 +977,15 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
     {
       // XXX Really need to find better way to master these variables.
       envrcScript << "# Default environment variables\n"
-                  << defaultValue( "SSL_CERT_FILE", FLOX_CACERT_PKG << "/etc/ssl/certs/ca-bundle.crt" )
+                  << defaultValue( "SSL_CERT_FILE",
+                                   FLOX_CACERT_PKG
+                                     << "/etc/ssl/certs/ca-bundle.crt" )
                   << defaultValue( "NIX_SSL_CERT_FILE", "${SSL_CERT_FILE}" )
 #ifdef __linux__
                   << defaultValue( "LOCALE_ARCHIVE", FLOX_LOCALE_ARCHIVE )
 #else
-                  << defaultValue( "NIX_COREFOUNDATION_RPATH", FLOX_NIX_COREFOUNDATION_RPATH )
+                  << defaultValue( "NIX_COREFOUNDATION_RPATH",
+                                   FLOX_NIX_COREFOUNDATION_RPATH )
                   << defaultValue( "PATH_LOCALE", FLOX_PATH_LOCALE )
 #endif
                   << "# Static environment variables" << std::endl;
@@ -1016,15 +1020,19 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
   bashScript << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl
              << "_gnused=" << FLOX_GNUSED_PKG << std::endl
              << BASH_ACTIVATE_SCRIPT
-             << posixIfThen( "[ -t 1 ]", "source " << ACTIVATE_D_SCRIPTS_DIR
-                                           << "/set-prompt.bash" )
-             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set +x" );
-  zshScript  << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl
-             << "_gnused=" << FLOX_GNUSED_PKG << std::endl
-             << ZSH_ACTIVATE_SCRIPT
-             << posixIfThen( "[ -t 1 ]", "source " << ACTIVATE_D_SCRIPTS_DIR
-                                           << "/set-prompt.zsh" )
-             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set +x" );
+             << posixIfThen( "[ -t 1 ]",
+                             "source " << ACTIVATE_D_SCRIPTS_DIR
+                                       << "/set-prompt.bash" )
+             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]",
+                             "set +x" );
+  zshScript << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl
+            << "_gnused=" << FLOX_GNUSED_PKG << std::endl
+            << ZSH_ACTIVATE_SCRIPT
+            << posixIfThen( "[ -t 1 ]",
+                            "source " << ACTIVATE_D_SCRIPTS_DIR
+                                      << "/set-prompt.zsh" )
+            << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]",
+                            "set +x" );
 
   /* Add profile scripts */
   auto profile = manifest.profile;

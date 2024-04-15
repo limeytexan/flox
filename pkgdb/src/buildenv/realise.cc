@@ -92,31 +92,21 @@ namespace flox::buildenv {
 
 /* -------------------------------------------------------------------------- */
 
-// Helpful macro for appending bash-syntax code to append a conditional
-// assignment to an initialization script. For instance, to set the
-// SSL_CERT_FILE environment variable, but only if it is not already set,
-// we append the following to the bash script:
-//
-//   export SSL_CERT_FILE="${SSL_CERT_FILE:-/path/to/cacert.pem}"
-#define SAFE_SETENV(var, value) \
-  "export " var "=\"${" var ":-" value "}\"\n"
-
-/* -------------------------------------------------------------------------- */
-
 // Top-level activate script, always invoked with nix bash.
 const char * const ACTIVATE_SCRIPT = R"_(
 # Flox environment activation script.
 [ "${_FLOX_PKGDB_VERBOSITY:-0}" -eq 0 ] || set -x
-
-# Capture starting environment.
-_start_env="$($_coreutils/bin/mktemp --suffix=.start-env)"
-export | $_coreutils/bin/sort > "$_start_env"
 
 # Set FLOX_ENV as the path by which all flox scripts can make reference to
 # the environment to which they belong. Use this to define the path to the
 # activation scripts directory.
 FLOX_ENV="$( $_coreutils/bin/dirname -- "${BASH_SOURCE[0]}" )"
 export FLOX_ENV
+
+# The rust CLI contains sophisticated logic to set $FLOX_SHELL based on the
+# process listening on STDOUT, but that won't happen when activating from
+# the top-level activation script, so fall back to $SHELL as a default.
+FLOX_SHELL="${FLOX_SHELL:-$SHELL}"
 
 # Set all other variables derived from FLOX_ENV. We previously did this
 # from within the rust CLI but we've moved it to this top-level activation
@@ -136,15 +126,12 @@ for d in "${flox_env_dirs[@]}"; do
     break
   fi
 done
-if [ $flox_env_found -eq 1 ]; then
-  if [ -t 1 ]; then
-    # If we're in an interactive shell, then we'll just print a message
-    # to the user to let them know that the environment has already been
-    # activated.
-    echo "ERROR: Flox environment already activated: $FLOX_ENV" >&2
-    exit 1
-  fi
-else
+if [ $flox_env_found -eq 0 ]; then
+
+  # First activation of this environment. Snapshot environment to start.
+  _start_env="$($_coreutils/bin/mktemp --suffix=.start-env)"
+  export | $_coreutils/bin/sort > "$_start_env"
+
   FLOX_ENV_DIRS="$FLOX_ENV:$FLOX_ENV_DIRS"
   export FLOX_ENV_DIRS
   FLOX_ENV_LIB_DIRS="$FLOX_ENV/lib:$FLOX_ENV_LIB_DIRS"
@@ -178,33 +165,61 @@ else
     # mode. So, we'll redirect stdout to stderr.
     source "$FLOX_ENV/activate.d/hook-on-activate" 1>&2
   fi
+
+  # Capture ending environment.
+  _end_env="$($_coreutils/bin/mktemp --suffix=.end-env)"
+  export | $_coreutils/bin/sort > "$_end_env"
+
+  # The userShell initialization scripts that follow have the potential to undo
+  # the environment modifications performed above, so we must first calculate
+  # all changes made to the environment so far so that we can restore them after
+  # the userShell initialization scripts have run. We use the `comm(1)` command
+  # to compare the starting and ending environment captures (think of it as a
+  # better diff for comparing sorted files), and `sed(1)` to format the output
+  # in the best format for use in each language-specific activation script.
+  _add_env="$($_coreutils/bin/mktemp --suffix=.add-env)"
+  _del_env="$($_coreutils/bin/mktemp --suffix=.del-env)"
+
+  # Capture environment variables to _set_ as "key=value" pairs.
+  $_coreutils/bin/comm -13 "$_start_env" "$_end_env" | \
+    $_gnused/bin/sed -e 's/^declare -x //' > $_add_env
+
+  # Capture environment variables to _unset_ as a list of keys.
+  # TODO: remove from $_del_env keys set in $_add_env
+  $_coreutils/bin/comm -23 "$_start_env" "$_end_env" | \
+    $_gnused/bin/sed -e 's/^declare -x //' -e 's/=.*//' > $_del_env
+
+  # Export tempfile paths for use within shell-specific activation scripts.
+  export _add_env _del_env
+
+  # Don't need these anymore.
+  $_coreutils/bin/rm -f "$_start_env" "$_end_env"
+
+else
+  # "Reactivation" of this environment.
+  if [ -t 1 ]; then
+    # If we're in an interactive shell, then we'll just print a message
+    # to the user to let them know that the environment has already been
+    # activated.
+    echo "ERROR: Flox environment already activated: $FLOX_ENV" >&2
+    exit 1
+  fi
+
+  # Start by comparing the starting and ending environments and
+  # emit commands to delete and add environment variables as needed.
+  case "$FLOX_SHELL" in
+    *bash|*zsh)
+      # Use "unset" for env deletions.
+      $_gnused/bin/sed -e 's/^/unset /' $_del_env
+      # Use "export" for env additions.
+      $_gnused/bin/sed -e 's/^/export /' $_add_env
+      ;;
+    *)
+      echo "Unsupported shell: $FLOX_SHELL" >&2
+      exit 1
+      ;;
+  esac
 fi
-
-# Capture ending environment.
-_end_env="$($_coreutils/bin/mktemp --suffix=.end-env)"
-export | $_coreutils/bin/sort > "$_end_env"
-
-# The userShell initialization scripts that follow have the potential to undo
-# the environment modifications performed above, so we must first calculate
-# all changes made to the environment so far so that we can restore them after
-# the userShell initialization scripts have run. We use the `comm(1)` command
-# to compare the starting and ending environment captures (think of it as a
-# better diff for comparing sorted files), and `sed(1)` to format the output
-# in the best format for use in each language-specific activation script.
-_add_env="$($_coreutils/bin/mktemp --suffix=.add-env)"
-_del_env="$($_coreutils/bin/mktemp --suffix=.del-env)"
-
-# Capture environment variables to _set_ as "key=value" pairs.
-$_coreutils/bin/comm -13 "$_start_env" "$_end_env" | \
-  $_gnused/bin/sed -e 's/^declare -x //' > $_add_env
-
-# Capture environment variables to _unset_ as a list of keys.
-# TODO: remove from $_del_env keys set in $_add_env
-$_coreutils/bin/comm -23 "$_start_env" "$_end_env" | \
-  $_gnused/bin/sed -e 's/^declare -x //' -e 's/=.*//' > $_del_env
-
-# Don't need these anymore.
-$_coreutils/bin/rm -f "$_start_env" "$_end_env"
 
 # From this point on the activation process depends on the mode:
 
@@ -213,22 +228,13 @@ $_coreutils/bin/rm -f "$_start_env" "$_end_env"
 #    TODO: discuss, then remove or plumb this through the CLI if necessary
 FLOX_TURBO=always
 if [ $# -gt 0 -a -n "$FLOX_TURBO" ]; then
-  $_coreutils/bin/rm -f "$_add_env" "$_del_env"
   exec "$@"
 fi
-
-# The remaining modes require that $FLOX_SHELL be set by the rust CLI.
-[ -n "$FLOX_SHELL" ] || {
-  echo "FLOX_SHELL not set .. defaulting to ${SHELL}" >&2
-  FLOX_SHELL="${SHELL}"
-}
 
 # 2. "interactive" mode: invoke the user's shell with args that:
 #   a. defeat the shell's normal startup scripts
 #   b. source the relevant activation script
 if [ -t 1 -o -n "$_FLOX_FORCE_INTERACTIVE" ]; then
-  # Export tempfile paths for use within shell-specific activation scripts.
-  export _add_env _del_env
   case "$FLOX_SHELL" in
     *bash)
       exec "$FLOX_SHELL" --rcfile "$FLOX_ENV/activate.d/bash" "$@"
@@ -247,26 +253,6 @@ if [ -t 1 -o -n "$_FLOX_FORCE_INTERACTIVE" ]; then
 fi
 
 # 3. "in-place" mode: emit activation commands in correct shell dialect
-
-# Start by comparing the starting and ending environments and
-# emit commands to delete and add environment variables as needed.
-case "$FLOX_SHELL" in
-  *bash|*zsh)
-    # Export tempfile paths for use within shell-specific activation scripts.
-    echo "export _add_env=\"$_add_env\""
-    echo "export _del_env=\"$_del_env\""
-    # Use "unset" for env deletions.
-    $_gnused/bin/sed -e 's/^/unset /' $_del_env
-    # Use "export" for env additions.
-    $_gnused/bin/sed -e 's/^/export /' $_add_env
-    # echo $_coreutils/bin/rm -f "$_add_env" "$_del_env"
-    # echo unset _add_env _del_env
-    ;;
-  *)
-    echo "Unsupported shell: $FLOX_SHELL" >&2
-    exit 1
-    ;;
-esac
 
 # Finish by echoing the contents of the shell-specific activation script.
 case "$FLOX_SHELL" in
@@ -304,10 +290,6 @@ set +h
 # Restore environment variables set in the previous bash initialization.
 eval "$($_gnused/bin/sed -e 's/^/unset /' $_del_env)"
 eval "$($_gnused/bin/sed -e 's/^/export /' $_add_env)"
-
-# Clean up temporary files.
-$_coreutils/bin/rm -f "$_add_env" "$_del_env"
-unset _add_env _del_env
 )_";
 
 
@@ -350,12 +332,10 @@ setopt nohashcmds
 setopt nohashdirs
 
 # Restore environment variables set in the previous bash initialization.
+set -x
 eval "$($_gnused/bin/sed -e 's/^/unset /' $_del_env)"
 eval "$($_gnused/bin/sed -e 's/^/export /' $_add_env)"
-
-# Clean up temporary files.
-$_coreutils/bin/rm -f "$_add_env" "$_del_env"
-unset _add_env _del_env
+set +x
 )_";
 
 
@@ -980,19 +960,16 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
     {
       // XXX Really need to find better way to master these variables.
       envrcScript << "# Default environment variables\n"
-                  << SAFE_SETENV( "FLOX_ENV", FLOX_ENV ) << '\n'
-                  << "export SSL_CERT_FILE=\"${SSL_CERT_FILE:-"
-                  << FLOX_CACERT_PKG << "/etc/ssl/certs/ca-bundle.crt}\"\n"
-                  << "export NIX_SSL_CERT_FILE=\"${NIX_SSL_CERT_FILE:-${SSL_CERT_FILE}}\"\n";
+                  << defaultValue( "SSL_CERT_FILE", FLOX_CACERT_PKG << "/etc/ssl/certs/ca-bundle.crt" )
+                  << defaultValue( "NIX_SSL_CERT_FILE", "${SSL_CERT_FILE}" )
 #ifdef __linux__
-      envrcScript << "export LOCALE_ARCHIVE=\"${LOCALE_ARCHIVE:-" << FLOX_LOCALE_ARCHIVE << "}\"\n";
+                  << defaultValue( "LOCALE_ARCHIVE", FLOX_LOCALE_ARCHIVE )
 #else
-      envrcScript << "export NIX_COREFOUNDATION_RPATH=\"${NIX_COREFOUNDATION_RPATH:-"
-                  << FLOX_NIX_COREFOUNDATION_RPATH << "}\"\n"
-                  << "export PATH_LOCALE=\"${PATH_LOCALE:-" << FLOX_PATH_LOCALE << "}\"\n";
+                  << defaultValue( "NIX_COREFOUNDATION_RPATH", FLOX_NIX_COREFOUNDATION_RPATH )
+                  << defaultValue( "PATH_LOCALE", FLOX_PATH_LOCALE )
 #endif
+                  << "# Static environment variables" << std::endl;
 
-      envrcScript << "# Static environment variables" << std::endl;
       for ( auto [name, value] : vars.value() )
         {
           /* Single quote value and replace ' with '\''.
@@ -1022,16 +999,16 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
   /* Add the shell activate scripts */
   bashScript << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl
              << "_gnused=" << FLOX_GNUSED_PKG << std::endl
-             << BASH_ACTIVATE_SCRIPT << "source " << ACTIVATE_D_SCRIPTS_DIR
-             << "/set-prompt.bash" << std::endl
-             << "set +x"  // disable verbose mode
-             << std::endl;
-  zshScript << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl
-            << "_gnused=" << FLOX_GNUSED_PKG << std::endl
-            << ZSH_ACTIVATE_SCRIPT << "source " << ACTIVATE_D_SCRIPTS_DIR
-            << "/set-prompt.zsh" << std::endl
-            << "set +x"  // disable verbose mode
-            << std::endl;
+             << BASH_ACTIVATE_SCRIPT
+             << posixIfThen( "[ -t 1 ]", "source " << ACTIVATE_D_SCRIPTS_DIR
+                                           << "/set-prompt.bash" )
+             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set -x" );
+  zshScript  << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl
+             << "_gnused=" << FLOX_GNUSED_PKG << std::endl
+             << ZSH_ACTIVATE_SCRIPT
+             << posixIfThen( "[ -t 1 ]", "source " << ACTIVATE_D_SCRIPTS_DIR
+                                           << "/set-prompt.zsh" )
+             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set -x" );
 
   /* Add profile scripts */
   auto profile = manifest.profile;

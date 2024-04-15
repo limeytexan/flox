@@ -132,12 +132,18 @@ if [ $flox_env_found -eq 0 ]; then
   _start_env="$($_coreutils/bin/mktemp --suffix=.start-env)"
   export | $_coreutils/bin/sort > "$_start_env"
 
-  FLOX_ENV_DIRS="$FLOX_ENV:$FLOX_ENV_DIRS"
-  export FLOX_ENV_DIRS
-  FLOX_ENV_LIB_DIRS="$FLOX_ENV/lib:$FLOX_ENV_LIB_DIRS"
-  export FLOX_ENV_LIB_DIRS
-  # XXX FIXME FLOX_PROMPT_ENVIRONMENTS="$FLOX_PROMPT $FLOX_PROMPT_ENVIRONMENTS"
-  # XXX FIXME export FLOX_PROMPT_ENVIRONMENTS
+  # Capture PID of this "first" activation. This provides the unique
+  # identifier with which to refer to environment variables associated
+  # with this environment activation.
+  FLOX_ENV_PID="$$"
+
+  # Set environment variables which represent the cumulative layering
+  # of flox environments. For the most part this involves prepending
+  # to the existing variables of the same name.
+  FLOX_ENV_DIRS="$FLOX_ENV${FLOX_ENV_DIRS:+:$FLOX_ENV_DIRS}"
+  FLOX_ENV_LIB_DIRS="$FLOX_ENV/lib${FLOX_ENV_LIB_DIRS:+:$FLOX_ENV_LIB_DIRS}"
+  FLOX_PROMPT_ENVIRONMENTS="$FLOX_ENV_DESCRIPTION${FLOX_PROMPT_ENVIRONMENTS:+ $FLOX_PROMPT_ENVIRONMENTS}"
+  export FLOX_ENV_DIRS FLOX_ENV_LIB_DIRS FLOX_PROMPT_ENVIRONMENTS
 
   # Process the flox environment customizations, which includes (amongst
   # other things) prepending this environment's bin directory to the PATH.
@@ -167,7 +173,7 @@ if [ $flox_env_found -eq 0 ]; then
   fi
 
   # Capture ending environment.
-  _end_env="$($_coreutils/bin/mktemp --suffix=.end-env)"
+  _end_env="$($_coreutils/bin/mktemp --suffix=.$FLOX_ENV_PID.end-env)"
   export | $_coreutils/bin/sort > "$_end_env"
 
   # The userShell initialization scripts that follow have the potential to undo
@@ -177,8 +183,8 @@ if [ $flox_env_found -eq 0 ]; then
   # to compare the starting and ending environment captures (think of it as a
   # better diff for comparing sorted files), and `sed(1)` to format the output
   # in the best format for use in each language-specific activation script.
-  _add_env="$($_coreutils/bin/mktemp --suffix=.add-env)"
-  _del_env="$($_coreutils/bin/mktemp --suffix=.del-env)"
+  _add_env="$($_coreutils/bin/mktemp --suffix=.$FLOX_ENV_PID.add-env)"
+  _del_env="$($_coreutils/bin/mktemp --suffix=.$FLOX_ENV_PID.del-env)"
 
   # Capture environment variables to _set_ as "key=value" pairs.
   $_coreutils/bin/comm -13 "$_start_env" "$_end_env" | \
@@ -196,29 +202,26 @@ if [ $flox_env_found -eq 0 ]; then
   $_coreutils/bin/rm -f "$_start_env" "$_end_env"
 
 else
+
   # "Reactivation" of this environment.
-  if [ -t 1 ]; then
-    # If we're in an interactive shell, then we'll just print a message
-    # to the user to let them know that the environment has already been
-    # activated.
+
+  # If we're attempting to launch an interactive shell then just print a
+  # message to say that the environment has already been activated.
+  if [ -t 1 ] && [ $# -eq 0 ]; then
     echo "ERROR: Flox environment already activated: $FLOX_ENV" >&2
     exit 1
   fi
 
-  # Start by comparing the starting and ending environments and
-  # emit commands to delete and add environment variables as needed.
-  case "$FLOX_SHELL" in
-    *bash|*zsh)
-      # Use "unset" for env deletions.
-      $_gnused/bin/sed -e 's/^/unset /' $_del_env
-      # Use "export" for env additions.
-      $_gnused/bin/sed -e 's/^/export /' $_add_env
-      ;;
-    *)
-      echo "Unsupported shell: $FLOX_SHELL" >&2
-      exit 1
-      ;;
-  esac
+  # Assert that the expected _{add,del}_env variables are present.
+  [ -n "$_add_env" -a -n "$_del_env" ] || {
+    echo 'ERROR (activate): $_add_env and $_del_env not found in environment' >&2;
+    exit 1;
+  }
+
+  # Replay the environment for the benefit of this shell.
+  eval "$($_gnused/bin/sed -e 's/^/unset /' $_del_env)"
+  eval "$($_gnused/bin/sed -e 's/^/export /' $_add_env)"
+
 fi
 
 # From this point on the activation process depends on the mode:
@@ -256,9 +259,22 @@ fi
 
 # Finish by echoing the contents of the shell-specific activation script.
 case "$FLOX_SHELL" in
-  *bash) echo "$( <"$FLOX_ENV/activate.d/bash" )";;
-  *zsh)  echo "$( <"$FLOX_ENV/activate.d/zsh"  )";;
-  *)     echo "unsupported shell: $FLOX_SHELL" >&2; exit 1;;
+  *bash)
+    echo "export FLOX_ENV=\"$FLOX_ENV\""
+    echo "export _add_env=\"$_add_env\""
+    echo "export _del_env=\"$_del_env\""
+    echo "$( <"$FLOX_ENV/activate.d/bash" )"
+    ;;
+  *zsh)
+    echo "export FLOX_ENV=\"$FLOX_ENV\""
+    echo "export _add_env=\"$_add_env\""
+    echo "export _del_env=\"$_del_env\""
+    echo "$( <"$FLOX_ENV/activate.d/zsh"  )"
+    ;;
+  *)
+    echo "unsupported shell: $FLOX_SHELL" >&2
+    exit 1
+    ;;
 esac
 )_";
 
@@ -272,7 +288,7 @@ const char * const BASH_ACTIVATE_SCRIPT = R"_(
 
 # Assert that the expected _{add,del}_env variables are present.
 [ -n "$_add_env" -a -n "$_del_env" ] || {
-  echo 'ERROR: $_add_env and $_del_env not found in environment' >&2;
+  echo 'ERROR (bash): $_add_env and $_del_env not found in environment' >&2;
   exit 1;
 }
 
@@ -299,7 +315,7 @@ const char * const ZSH_ACTIVATE_SCRIPT = R"_(
 
 # Assert that the expected _{add,del}_env variables are present.
 [ -n "$_add_env" -a -n "$_del_env" ] || {
-  echo 'ERROR: $_add_env and $_del_env not found in environment' >&2;
+  echo 'ERROR (zsh): $_add_env and $_del_env not found in environment' >&2;
   exit 1;
 }
 
@@ -1002,13 +1018,13 @@ makeActivationScripts( nix::EvalState & state, resolver::Lockfile & lockfile )
              << BASH_ACTIVATE_SCRIPT
              << posixIfThen( "[ -t 1 ]", "source " << ACTIVATE_D_SCRIPTS_DIR
                                            << "/set-prompt.bash" )
-             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set -x" );
+             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set +x" );
   zshScript  << "_coreutils=" << FLOX_COREUTILS_PKG << std::endl
              << "_gnused=" << FLOX_GNUSED_PKG << std::endl
              << ZSH_ACTIVATE_SCRIPT
              << posixIfThen( "[ -t 1 ]", "source " << ACTIVATE_D_SCRIPTS_DIR
                                            << "/set-prompt.zsh" )
-             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set -x" );
+             << posixIfThen( "[ \"${_FLOX_PKGDB_VERBOSITY:-0}\" -gt 0 ]", "set +x" );
 
   /* Add profile scripts */
   auto profile = manifest.profile;

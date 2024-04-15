@@ -41,8 +41,8 @@
 //
 // E.g. 'posixIfThen("[ -t 1 ]", "echo interactive")' returns:
 //   'if [ -t 1 ]; then echo interactive; fi' (with newlines)
-#define posixIfThen(var, value) \
-  "if " var "; then\n  " value ";\nfi" << std::endl
+#define posixIfThen(cond, action) \
+  "if " cond "; then\n  " action "\nfi" << std::endl
 
 /* -------------------------------------------------------------------------- */
 

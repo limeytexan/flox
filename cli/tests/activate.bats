@@ -112,7 +112,7 @@ env_is_activated() {
 
 # ---------------------------------------------------------------------------- #
 # bats test_tags=activate,activate:path,activate:path:bash
-@test "bash: activate modifies prompt and puts package in path" {
+@test "bash: activate puts package in path" {
   run "$FLOX_BIN" install -d "$PROJECT_DIR" hello
   assert_success
   assert_output --partial "✅ 'hello' installed to environment"
@@ -123,7 +123,7 @@ env_is_activated() {
 
 # ---------------------------------------------------------------------------- #
 # bats test_tags=activate,activate:path,activate:path:zsh
-@test "zsh: activate modifies prompt and puts package in path" {
+@test "zsh: activate puts package in path" {
   run "$FLOX_BIN" install -d "$PROJECT_DIR" hello
   assert_success
   assert_output --partial "✅ 'hello' installed to environment"
@@ -299,7 +299,7 @@ env_is_activated() {
   assert_output --regexp "Disable command hashing"
 }
 
-# bats test_tags=activate,activate:inplace-modifies
+# bats test_tags=activate,activate:inplace-modifies,activate:inplace-modifies:bash
 @test "'flox activate' modifies the current shell (bash)" {
 
   # set profile scripts
@@ -310,7 +310,7 @@ env_is_activated() {
   sed -i -e "s/^\[vars\]/${VARS//$'\n'/\\n}/" "$PROJECT_DIR/.flox/env/manifest.toml"
   "$FLOX_BIN" install hello
 
-  run bash -c 'eval "$("$FLOX_BIN" -v activate)"; type hello; echo $foo'
+  run bash -c '$FLOX_BIN activate | cat; eval "$($FLOX_BIN activate)"; type hello; echo $foo'
   assert_success
   assert_line "sourcing hook.on-activate"
   assert_line "sourcing profile.common"
@@ -320,7 +320,7 @@ env_is_activated() {
   assert_line "baz"
 }
 
-# bats test_tags=activate,activate:inplace-modifies
+# bats test_tags=activate,activate:inplace-modifies,activate:inplace-modifies:zsh
 @test "'flox activate' modifies the current shell (zsh)" {
 
   # set profile scripts

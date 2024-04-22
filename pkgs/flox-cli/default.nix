@@ -23,6 +23,7 @@
   nix,
   pkgsFor,
   flox-pkgdb,
+  flox-buildenv,
 }: let
   flox-src = builtins.path {
     name = "flox-src";
@@ -63,6 +64,10 @@
         if flox-pkgdb == null
         then "ld-floxlib.so"
         else "${flox-pkgdb}/lib/ld-floxlib.so";
+      BUILDENV_BIN =
+        if flox-buildenv == null
+        then "buildenv"
+        else "${flox-buildenv}/bin/buildenv";
 
       # bundling of internally used nix scripts
       FLOX_RESOLVER_SRC = builtins.path {path = ../../resolver;};
@@ -193,6 +198,7 @@ in
           pkgsFor
           nix
           flox-pkgdb
+          flox-buildenv
           ;
 
         ciPackages = [];

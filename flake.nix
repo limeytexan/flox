@@ -159,6 +159,9 @@
       # Package Database Utilities: scrape, search, and resolve.
       flox-pkgdb = callPackage ./pkgs/flox-pkgdb {};
 
+      # Package Database Utilities: scrape, search, and resolve.
+      flox-buildenv = callPackage ./pkgs/flox-buildenv {};
+
       # Flox Command Line Interface ( development build ).
       flox-cli = callPackage ./pkgs/flox-cli {};
 
@@ -208,6 +211,7 @@
         (pkgs)
         flox-gh
         flox-pkgdb
+        flox-buildenv
         flox-cli
         flox-cli-tests
         flox-manpages
@@ -235,7 +239,10 @@
           PKGDB_BIN = null;
           FLOX_BIN = null;
         };
-        flox-cli = prev.flox-cli.override {flox-pkgdb = null;};
+        flox-cli = prev.flox-cli.override {
+          flox-pkgdb = null;
+          flox-buildenv = null;
+        };
       });
       checksFor = builtins.getAttr system checks;
     in {

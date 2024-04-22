@@ -5,6 +5,7 @@
   symlinkJoin,
   makeBinaryWrapper,
   flox-pkgdb,
+  flox-buildenv,
   flox-cli,
   flox-manpages,
   SENTRY_DSN ? null,
@@ -41,6 +42,7 @@ in
         ${lib.optionalString (SENTRY_ENV != null) "--set FLOX_SENTRY_ENV \"${SENTRY_ENV}\" "} \
         --set PKGDB_BIN       "${flox-pkgdb}/bin/pkgdb" \
         --set LD_FLOXLIB      "${flox-pkgdb}/lib/ld-floxlib.so" \
+        --set BUILDENV_BIN    "${flox-buildenv}/bin/buildenv" \
         --set FLOX_BIN        "${flox-cli}/bin/flox" \
         --set FLOX_VERSION    "${version}"
     '';

@@ -14,6 +14,7 @@
   expect,
   findutils,
   flox-pkgdb,
+  flox-buildenv,
   flox-cli,
   gawk,
   git,
@@ -35,6 +36,7 @@
   NIX_BIN ? "${nix}/bin/nix",
   PKGDB_BIN ? "${flox-pkgdb}/bin/pkgdb",
   LD_FLOXLIB ? "${flox-pkgdb}/lib/ld-floxlib.so",
+  BUILDENV_BIN ? "${flox-buildenv}/bin/buildenv",
   FLOX_BIN ? "${flox-cli}/bin/flox",
 }: let
   batsWith = bats.withLibraries (p: [

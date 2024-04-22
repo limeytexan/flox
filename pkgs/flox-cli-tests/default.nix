@@ -15,6 +15,7 @@
   expect,
   findutils,
   flox-pkgdb,
+  flox-buildenv,
   flox-watchdog,
   flox-cli,
   gawk,
@@ -41,6 +42,7 @@
   PROJECT_TESTS_DIR ? ./../../cli/tests,
   NIX_BIN ? "${nix}/bin/nix",
   PKGDB_BIN ? "${flox-pkgdb}/bin/pkgdb",
+  BUILDENV_BIN ? "${flox-buildenv}/bin/buildenv",
   FLOX_BIN ? "${flox-cli}/bin/flox",
   WATCHDOG_BIN ? "${flox-watchdog}/bin/flox-watchdog",
 }: let

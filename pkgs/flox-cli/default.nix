@@ -4,6 +4,7 @@
   darwin,
   flox-activation-scripts,
   flox-pkgdb,
+  flox-buildenv,
   gitMinimal,
   glibcLocalesUtf8,
   gnused,
@@ -162,6 +163,7 @@ in
         inherit
           envs
           flox-pkgdb
+          flox-buildenv
           flox-watchdog
           pkgsFor # Needed to build installers
           ;

@@ -120,23 +120,23 @@ env_is_activated() {
 
 # bats test_tags=activate,activate:flox_shell,activate:flox_shell:bash
 @test "activate identifies FLOX_SHELL from running shell (bash)" {
-  run --separate-stderr bash -c "$FLOX_BIN activate | grep -- '-flox-activate.d/set-prompt'"
+  run --separate-stderr bash -c "$FLOX_BIN activate | grep -- 'source .*/activate.d/'"
   assert_success
   assert_equal "${#lines[@]}" 1 # 1 result
-  assert_line --partial "flox-activate.d/set-prompt.bash"
+  assert_line --partial "/activate.d/bash"
 }
 
 # bats test_tags=activate,activate:flox_shell,activate:flox_shell:fish
 @test "activate identifies FLOX_SHELL from running shell (fish)" {
-  run --separate-stderr fish -c "$FLOX_BIN activate | grep -- '-flox-activate.d/set-prompt'"
+  run --separate-stderr fish -c "$FLOX_BIN activate | grep -- 'source .*/activate.d/'"
   assert_success
   assert_equal "${#lines[@]}" 1 # 1 result
-  assert_line --partial "flox-activate.d/set-prompt.fish"
+  assert_line --partial "/activate.d/fish"
 }
 
 # bats test_tags=activate,activate:flox_shell,activate:flox_shell:tcsh
 @test "activate identifies FLOX_SHELL from running shell (tcsh)" {
-  run --separate-stderr tcsh -c "$FLOX_BIN activate | grep -- '/activate.d/'"
+  run --separate-stderr tcsh -c "$FLOX_BIN activate | grep -- 'source .*/activate.d/'"
   assert_success
   assert_equal "${#lines[@]}" 1 # 1 result
   assert_line --partial "/activate.d/tcsh"
@@ -144,10 +144,10 @@ env_is_activated() {
 
 # bats test_tags=activate,activate:flox_shell,activate:flox_shell:zsh
 @test "activate identifies FLOX_SHELL from running shell (zsh)" {
-  run --separate-stderr zsh -c "$FLOX_BIN activate | grep -- '-flox-activate.d/set-prompt'"
+  run --separate-stderr zsh -c "$FLOX_BIN activate | grep -- 'source .*/activate.d/'"
   assert_success
   assert_equal "${#lines[@]}" 1 # 1 result
-  assert_line --partial "flox-activate.d/set-prompt.zsh"
+  assert_line --partial "/activate.d/zsh"
 }
 
 # ---------------------------------------------------------------------------- #
@@ -612,7 +612,7 @@ env_is_activated() {
   assert_success
   # check that env vars are set for compatibility with nix built software
   assert_line --partial "export NIX_SSL_CERT_FILE="
-  assert_line --partial "Disable command hashing"
+  assert_line --partial "activate.d/bash"
 }
 
 # bats test_tags=activate,activate:inplace-prints
@@ -622,7 +622,7 @@ env_is_activated() {
   assert_success
   # check that env vars are set for compatibility with nix built software
   assert_line --partial "set -gx NIX_SSL_CERT_FILE "
-  assert_line --partial "fish does not use hashing in the same way bash does"
+  assert_line --partial "activate.d/fish"
 }
 
 # bats test_tags=activate,activate:inplace-prints
@@ -642,7 +642,7 @@ env_is_activated() {
   assert_success
   # check that env vars are set for compatibility with nix built software
   assert_line --partial "export NIX_SSL_CERT_FILE="
-  assert_line --partial "Disable command hashing"
+  assert_line --partial "activate.d/zsh"
 }
 
 # ---------------------------------------------------------------------------- #
@@ -766,7 +766,7 @@ env_is_activated() {
   # TODO: figure out why backticks mess up the quoting in the following example,
   #       going with this in the meantime because it works ...
   FLOX_SHELL="tcsh" run -- \
-    "$FLOX_BIN" -vvv activate -- \
+    "$FLOX_BIN" activate -- \
       tcsh -c "eval \`$FLOX_BIN activate\`; bash $TESTS_DIR/activate/verify_PATH.bash"
   assert_success
 }

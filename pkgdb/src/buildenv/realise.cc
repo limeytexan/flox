@@ -391,22 +391,20 @@ case "$FLOX_SHELL" in
     echo "export _FLOX_PKGDB_VERBOSITY=\"$_FLOX_PKGDB_VERBOSITY\";"
     echo "export _add_env=\"$_add_env\";"
     echo "export _del_env=\"$_del_env\";"
-    echo "$( <"$FLOX_ENV/activate.d/bash" )"
+    echo "source '$FLOX_ENV/activate.d/bash';"
     ;;
   *fish)
     echo "set -gx FLOX_ENV \"$FLOX_ENV\";"
     echo "set -gx _FLOX_PKGDB_VERBOSITY \"$_FLOX_PKGDB_VERBOSITY\";"
     echo "set -gx _add_env \"$_add_env\";"
     echo "set -gx _del_env \"$_del_env\";"
-    echo "$( <"$FLOX_ENV/activate.d/fish" )"
+    echo "source '$FLOX_ENV/activate.d/fish';"
     ;;
   *tcsh)
     echo "setenv FLOX_ENV \"$FLOX_ENV\";"
     echo "setenv _FLOX_PKGDB_VERBOSITY \"$_FLOX_PKGDB_VERBOSITY\";"
     echo "setenv _add_env \"$_add_env\";"
     echo "setenv _del_env \"$_del_env\";"
-    # tcsh doesn't have a way to interpret output without squelching
-    # newlines, so instead direct it to read the file directly.
     echo "source '$FLOX_ENV/activate.d/tcsh';"
     ;;
   *zsh)
@@ -417,7 +415,7 @@ case "$FLOX_SHELL" in
     echo "export FLOX_ZSH_INIT_SCRIPT=\"$FLOX_ENV/activate.d/zsh\";"
     echo "export _add_env=\"$_add_env\";"
     echo "export _del_env=\"$_del_env\";"
-    echo "$( <"$FLOX_ENV/activate.d/zsh"  )"
+    echo "source '$FLOX_ENV/activate.d/zsh';"
     ;;
   *)
     echo "unsupported shell: $FLOX_SHELL" >&2

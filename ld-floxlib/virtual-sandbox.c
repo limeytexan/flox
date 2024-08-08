@@ -24,8 +24,8 @@
 #define INITIAL_CAPACITY FLOX_ENV_CLOSURE_MAXENTRIES
 
 // Uncomment the following line for debugging.
-// #define _debug(format, ...) fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define _debug(format, ...) (void)0
+#define _debug(format, ...) fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
+// #define _debug(format, ...) (void)0
 
 static size_t hash(const char *key, size_t capacity) {
     size_t hash_value = 0;

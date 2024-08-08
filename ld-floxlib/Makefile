@@ -16,10 +16,18 @@ ld-floxlib.so: ld-floxlib.c virtual-sandbox.o
 	# one already loaded we remove RPATH/RUNPATH from the shared library.
 	patchelf --remove-rpath $@
 
+libintercept.so: intercept.c virtual-sandbox.o
+	$(CC) -shared -fPIC $^ -o $@
+	# The ld-floxlib.so library only requires libc, which is guaranteed
+	# to either be already loaded or available by way of a default provided
+	# by the linker itself, so to avoid loading a different libc than the
+	# one already loaded we remove RPATH/RUNPATH from the shared library.
+	patchelf --remove-rpath $@
+
 .PHONY: install
-install: ld-floxlib.so
+install: ld-floxlib.so libintercept.so
 	mkdir -p $(PREFIX)/lib
-	cp $< $(PREFIX)/lib
+	cp $^ $(PREFIX)/lib
 
 # Build unit-test linked with ld-floxlib.so.
 unit-test: unit-test.c ld-floxlib.so

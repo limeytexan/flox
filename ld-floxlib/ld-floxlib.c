@@ -30,32 +30,10 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "virtual-sandbox.h"
+#include "closure.h"
 
 // Declare version bindings to work with minimum supported GLIBC versions.
-#if defined( __aarch64__ )
-// aarch64 Linux only goes back to 2.17.
-__asm__( ".symver close,close@GLIBC_2.17" );
-__asm__( ".symver fprintf,fprintf@GLIBC_2.17" );
-__asm__( ".symver getenv,getenv@GLIBC_2.17" );
-__asm__( ".symver open,open@GLIBC_2.17" );
-__asm__( ".symver snprintf,snprintf@GLIBC_2.17" );
-__asm__( ".symver stderr,stderr@GLIBC_2.17" );
-__asm__( ".symver strrchr,strrchr@GLIBC_2.17" );
-__asm__( ".symver strtok,strtok@GLIBC_2.17" );
-#elif defined( __x86_64__ )
-// x86_64 Linux goes back to 2.2.5.
-__asm__( ".symver close,close@GLIBC_2.2.5" );
-__asm__( ".symver fprintf,fprintf@GLIBC_2.2.5" );
-__asm__( ".symver getenv,getenv@GLIBC_2.2.5" );
-__asm__( ".symver open,open@GLIBC_2.2.5" );
-__asm__( ".symver snprintf,snprintf@GLIBC_2.2.5" );
-__asm__( ".symver stderr,stderr@GLIBC_2.2.5" );
-__asm__( ".symver strrchr,strrchr@GLIBC_2.2.5" );
-__asm__( ".symver strtok,strtok@GLIBC_2.2.5" );
-#else
-// Punt .. just go with default symbol bindings and hope for the best.
-#endif
+#include "glibc-bindings.h"
 
 // Define the maximum number of directories that can be specified in
 // the FLOX_ENV_LIB_DIRS environment variable. This is a somewhat

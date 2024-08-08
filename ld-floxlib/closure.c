@@ -14,11 +14,14 @@
  * start by reading closure paths into a btable from $FLOX_ENV/requisites.txt.
  */
 
-#include "virtual-sandbox.h"
+#include "closure.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+
+// Declare version bindings to work with minimum supported GLIBC versions.
+#include "glibc-bindings.h"
 
 #define HASH_MULTIPLIER 31
 #define INITIAL_CAPACITY FLOX_ENV_CLOSURE_MAXENTRIES

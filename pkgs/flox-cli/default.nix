@@ -13,6 +13,7 @@
   hostPlatform,
   inputs,
   installShellFiles,
+  ld-floxlib,
   lib,
   makeWrapper,
   nix,
@@ -185,9 +186,13 @@ in
             --add-flags "--no-builtin-rules --no-builtin-variables --makefile $out/libexec/flox-build.mk"
           mkdir -p $out/libexec
           cp ${../../libexec/build-manifest.nix} $out/libexec/build-manifest.nix
+          substituteInPlace $out/libexec/build-manifest.nix \
+            --replace "__FLOX_CLI_OUTPATH__" "$out"
           cp ${../../libexec/flox-build.mk} $out/libexec/flox-build.mk
           substituteInPlace $out/libexec/flox-build.mk \
             --replace "__FLOX_CLI_OUTPATH__" "$out"
+          mkdir -p $out/lib
+          cp ${ld-floxlib}/lib/libsandbox.so $out/lib
         '';
 
       doInstallCheck = false;

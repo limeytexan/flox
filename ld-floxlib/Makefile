@@ -5,10 +5,10 @@ REDCROSS = ❌
 # Define LD_FLOXLIB with macro to allow testing builds from other hosts.
 LD_FLOXLIB ?= $(abspath ld-floxlib.so)
 
-virtual-sandbox.o: virtual-sandbox.c virtual-sandbox.h
+closure.o: closure.c closure.h
 	$(CC) -fPIC -c $<
 
-ld-floxlib.so: ld-floxlib.c virtual-sandbox.o
+ld-floxlib.so: ld-floxlib.c closure.o
 	$(CC) -shared -fPIC $^ -o $@
 	# The ld-floxlib.so library only requires libc, which is guaranteed
 	# to either be already loaded or available by way of a default provided
@@ -16,16 +16,16 @@ ld-floxlib.so: ld-floxlib.c virtual-sandbox.o
 	# one already loaded we remove RPATH/RUNPATH from the shared library.
 	patchelf --remove-rpath $@
 
-libintercept.so: intercept.c virtual-sandbox.o
+libsandbox.so: sandbox.c closure.o
 	$(CC) -shared -fPIC $^ -o $@
-	# The ld-floxlib.so library only requires libc, which is guaranteed
+	# The libsandbox.so library only requires libc, which is guaranteed
 	# to either be already loaded or available by way of a default provided
 	# by the linker itself, so to avoid loading a different libc than the
 	# one already loaded we remove RPATH/RUNPATH from the shared library.
 	patchelf --remove-rpath $@
 
 .PHONY: install
-install: ld-floxlib.so libintercept.so
+install: ld-floxlib.so libsandbox.so
 	mkdir -p $(PREFIX)/lib
 	cp $^ $(PREFIX)/lib
 

@@ -1,6 +1,7 @@
 {
   pkgs ? import <nixpkgs> {},
   name,
+  flox-cli ? "__FLOX_CLI_OUTPATH__",
   flox-env,
   install-prefix,
   srcTarball ? null, # optional
@@ -75,11 +76,13 @@ in
           "tar --skip-old-files -xpzf ${buildCache-tgz-contents}" }
         ${ if buildCache == null then ''
           # When not preserving a cache we just run the build normally.
+          LD_PRELOAD=${flox-cli}/lib/libsandbox.so FLOX_VIRTUAL_SANDBOX=${virtualSandbox} \
           FLOX_TURBO=1 ${flox-env-package}/activate bash -e ${buildScript-contents}
         '' else ''
           # If the build fails we still want to preserve the build cache, so we
           # remove $out on failure and allow the Nix build to proceed to write
           # the result symlink.
+          LD_PRELOAD=${flox-cli}/lib/libsandbox.so FLOX_VIRTUAL_SANDBOX=${virtualSandbox} \
           FLOX_TURBO=1 ${flox-env-package}/activate bash -e ${buildScript-contents} || \
             ( rm -rf $out && echo "flox build failed (caching build dir)" | tee $out 1>&2 )
         '' }

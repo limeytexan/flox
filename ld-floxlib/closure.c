@@ -30,6 +30,9 @@
 #define _debug(format, ...) fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
 // #define _debug(format, ...) (void)0
 
+// Temporary path buffer for calculating realpath of hash table queries.
+static char realpath_buf[PATH_MAX];
+
 static size_t hash(const char *key, size_t capacity) {
     size_t hash_value = 0;
     while (*key) {
@@ -153,9 +156,20 @@ bool in_closure(const char *path) {
         // There is one more "blessed" path to be added to the table which is
         // the path of the manifest-built package itself, and this comes to us
         // by way of the FLOX_MANIFEST_BUILD_OUT environment variable.
-        const char *manifest_build_out = getenv("FLOX_MANIFEST_BUILD_OUT");
-        if (manifest_build_out) {
-            if (hash_table_store(table, manifest_build_out) != 0) {
+        const char *additional_path = getenv("FLOX_MANIFEST_BUILD_OUT");
+        if (additional_path) {
+            if (hash_table_store(table, additional_path) != 0) {
+                fprintf(stderr, "Error: Hash table is full, cannot store more paths\n");
+            }
+            count++;
+        }
+
+        // There is one more "blessed" path to be added to the table which is
+        // the path of the manifest-built package itself, and this comes to us
+        // by way of the FLOX_SRC environment variable.
+        additional_path = getenv("FLOX_SRC_DIR");
+        if (additional_path) {
+            if (hash_table_store(table, additional_path) != 0) {
                 fprintf(stderr, "Error: Hash table is full, cannot store more paths\n");
             }
             count++;
@@ -164,5 +178,12 @@ bool in_closure(const char *path) {
         _debug("loaded %d entries from requisites.txt", count);
     }
 
-    return hash_table_lookup(table, path);
+    if (realpath( path, realpath_buf ) == NULL)
+      {
+        // Likely that path does not exist, so just return true
+	// so that the real system call can return ENOENT.
+	return true;
+      }
+
+    return hash_table_lookup(table, realpath_buf);
 }

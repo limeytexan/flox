@@ -193,6 +193,7 @@ in
             --replace "__FLOX_CLI_OUTPATH__" "$out"
           mkdir -p $out/lib
           cp ${ld-floxlib}/lib/libsandbox.so $out/lib
+          ln -s ${ld-floxlib}/lib/libsandbox.so $out/lib
         '';
 
       doInstallCheck = false;

@@ -27,8 +27,8 @@
 #define INITIAL_CAPACITY FLOX_ENV_CLOSURE_MAXENTRIES
 
 // Uncomment the following line for debugging.
-#define _debug(format, ...) fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
-// #define _debug(format, ...) (void)0
+// #define _debug(format, ...) fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
+#define _debug(format, ...) (void)0
 
 // Temporary path buffer for calculating realpath of hash table queries.
 static char realpath_buf[PATH_MAX];
@@ -103,6 +103,14 @@ bool hash_table_lookup(hash_table_t *table, const char *key) {
 bool in_closure(const char *path) {
     static hash_table_t *table = NULL;
 
+
+// FIXME: these hacks belong in ld-floxlib.c and sandbox.c, because
+// there is context from knowing that we're dealing with ELF invocations
+// in the first instance, and general file access in the second. The
+// concept of "freepass" is only relevant to ELF invocations, while the
+// concept of allowed "basenames" is only relevant to general file access.
+
+
     // The `/usr/bin/env` path is ubiquitous and hardcoded to an extent that
     // we are faced with the choice of forcing developers to replace it in
     // code, or simply let it be an allowed exception.
@@ -117,10 +125,30 @@ bool in_closure(const char *path) {
     } else if (
         strcmp(path, "/usr/bin/env") == 0 ||
         strcmp(path, "/bin/sh") == 0 ||
-        strcmp(path, "/usr/bin/dash") == 0
+        strcmp(path, "/usr/bin/dash") == 0 ||
+        strcmp(path, ".") == 0
     ) {
         freepass = true;
         return true;
+    }
+
+    // If the path does not start with a "/" then it is _probably_ a child
+    // of ".", and we can allow it to pass.
+    if (path[0] != '/') return true;
+
+    // There are other basenames that are also allowed, such as the source
+    // directory itself. Go through this [short] list now before accessing
+    // the hash table.
+    if ( strncmp(path, "/dev/", 5) == 0 ) return true;
+    if ( strncmp(path, "/sys/", 5) == 0 ) return true;
+    if ( strncmp(path, "/proc/", 6) == 0 ) return true;
+    const char *flox_src_dir = getenv("FLOX_SRC_DIR");
+    if (flox_src_dir) {
+        if ( strncmp(path, flox_src_dir, strlen(flox_src_dir)) == 0 &&
+          ( path[strlen(flox_src_dir)] == '/' || path[strlen(flox_src_dir)] == '\0' )
+        ) {
+            return true;
+        }
     }
 
     if (!table) {
@@ -153,21 +181,17 @@ bool in_closure(const char *path) {
         }
         fclose(file);
 
+	// Because this library will itself be loaded on account of its presence
+	// in LD_PRELOAD, we should ensure that we don't trip over ourselves.
+        if (hash_table_store(table, "@@out@@") != 0) {
+            fprintf(stderr, "Error: Hash table is full, cannot store more paths\n");
+        }
+        count++;
+
         // There is one more "blessed" path to be added to the table which is
         // the path of the manifest-built package itself, and this comes to us
         // by way of the FLOX_MANIFEST_BUILD_OUT environment variable.
         const char *additional_path = getenv("FLOX_MANIFEST_BUILD_OUT");
-        if (additional_path) {
-            if (hash_table_store(table, additional_path) != 0) {
-                fprintf(stderr, "Error: Hash table is full, cannot store more paths\n");
-            }
-            count++;
-        }
-
-        // There is one more "blessed" path to be added to the table which is
-        // the path of the manifest-built package itself, and this comes to us
-        // by way of the FLOX_SRC environment variable.
-        additional_path = getenv("FLOX_SRC_DIR");
         if (additional_path) {
             if (hash_table_store(table, additional_path) != 0) {
                 fprintf(stderr, "Error: Hash table is full, cannot store more paths\n");

@@ -116,7 +116,6 @@ define BUILD_sandbox_template =
 	tar -czf - --no-recursion -T <(git ls-files) > $$@
 
   # The buildCache value needs to be similarly stable when nothing changes across
-  # builds.  Note that realpath doubles as an existence check.
   $(eval $(_pvarname)_buildCache = $($(_pvarname)_tmpBasename)-buildCache.tgz)
   $($(_pvarname)_buildCache): FORCE
 	-rm -f $$@
@@ -130,17 +129,22 @@ define BUILD_sandbox_template =
 	@if [ -f "$(_result)-buildCache" ]; then \
 	  cp $(_result)-buildCache $$@; \
 	else \
-	  tmpdir=$$(mktemp -d); \
-	  echo "Build cache initialized on $$(date)" > $$tmpdir/.buildCache.init; \
-	  tar -czf $$@ -C $$tmpdir .buildCache.init; \
-	  rm -rf $$tmpdir; \
+	  tmpdir=$$$$(mktemp -d); \
+	  echo "Build cache initialized on $$$$(date)" > $$$$tmpdir/.buildCache.init; \
+	  tar -czf $$@ -C $$$$tmpdir .buildCache.init; \
+	  rm -rf $$$$tmpdir; \
 	fi
 
   .PHONY: $(_pname)_sandbox_build
   $(_pname)_sandbox_build: $($(_pvarname)_buildScript) $($(_pvarname)_src_tgz) \
 		$(if $(_do_buildCache),$($(_pvarname)_buildCache))
 	@echo "Building $(_name) in sandbox mode"
-	@# N.B. realpath returns empty string if path does not exist.
+	@# If a previous buildCache exists then move it out of the way
+	@# so that we can detect later if it has been updated.
+	@if [ -n "$(_do_buildCache)" ] && [ -f "$(_result)-buildCache" ]; then \
+	  rm -f "$(_result)-buildCache.prevOutPath"; \
+	  readlink "$(_result)-buildCache" > "$(_result)-buildCache.prevOutPath"; \
+	fi
 	nix --extra-experimental-features nix-command \
 	  build -L --file __FLOX_CLI_OUTPATH__/libexec/build-manifest.nix \
 	    --argstr name "$(_name)" \
@@ -154,6 +158,19 @@ define BUILD_sandbox_template =
 	    $(if $(_virtualSandbox),--argstr virtualSandbox "$(strip $(_virtualSandbox))") \
 	    --out-link "result-$(_pname)" \
 	    '^*' 2>&1 | tee $($(_pvarname)_logfile)
+	@# Check to see if a new buildCache has been created, and if so then go
+	@# ahead and run 'nix store delete' on the previous cache, keeping in
+	@# mind that the symlink will remain unchanged in the event of an
+	@# unsuccessful build.
+	@if [ -n "$(_do_buildCache)" ]; then \
+	  if [ -f "$(_result)-buildCache" ] && [ -f "$(_result)-buildCache.prevOutPath" ]; then \
+	    if [ $$$$(readlink "$(_result)-buildCache") != $$$$(cat "$(_result)-buildCache.prevOutPath") ]; then \
+	      nix --extra-experimental-features nix-command store delete \
+	        $$$$(cat "$(_result)-buildCache.prevOutPath") >/dev/null 2>&1 || true; \
+	    fi; \
+	  fi; \
+	  rm -f "$(_result)-buildCache.prevOutPath"; \
+	fi
 
 endef
 

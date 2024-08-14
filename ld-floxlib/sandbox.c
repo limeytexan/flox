@@ -1,3 +1,19 @@
+/*
+ * The Flox "virtual sandbox" warns or aborts when encountering an ELF access
+ * from outside the closure of packages implied by $FLOX_ENV. In this regard
+ * it can provide the same guarantees at an ELF level provided by the sandbox
+ * itself, but at an _advisory_ level, so that developers are informed of
+ * missing dependencies without actually breaking anything.
+ *
+ * The virtual sandbox is enabled with `FLOX_VIRTUAL_SANDBOX=(warn|enforce)`
+ * set in the environment, and we do this when wrapping files in the bin
+ * directory in the course of performing a manifest build.
+ *
+ * As with the parsing of FLOX_ENV_LIB_DIRS, it is essential that this parsing
+ * of the closure be performant and initialized only once per invocation, so we
+ * start by reading closure paths into a btable from $FLOX_ENV/requisites.txt.
+ */
+
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stdio.h>
@@ -5,23 +21,20 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <errno.h>
 
-// For access to the in_closure() function.
-#include "closure.h"
-
 // Declare version bindings to work with minimum supported GLIBC versions.
 #include "glibc-bindings.h"
 
+// For access to the in_closure() function.
+#include "closure.h"
+
 // Derive audit level from FLOX_VIRTUAL_SANDBOX environment variable.
-static int    sandbox_level = -1;
-// Debug sandbox library with FLOX_DEBUG_SANDBOX=1.
-static int    sandbox_debug = -1;
-// Counter for use with _warn_once() macro.
-static int    warn_count = 0;
+int    sandbox_level = -1;
 
 // Function pointers to hold the original functions
 static int (*orig_open)(const char *pathname, int flags, ...) = NULL;
@@ -32,25 +45,26 @@ static int (*orig_fstat)(int fd, struct stat *statbuf) = NULL;
 static int (*orig_newfstatat)(int dirfd, const char *pathname, struct stat *statbuf, int flags) = NULL;
 
 // Helper macros for printing debug, warnings, errors.
-#define _debug(format, ...) \
-  if (sandbox_debug) \
-    fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define _audit(format, ...) \
-  if ( audit_ld_floxlib || sandbox_debug ) \
-    fprintf(stderr, "AUDIT[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define _warn(format, ...) fprintf(stderr, "WARNING[%d]: " format "\n", getpid(), ##__VA_ARGS__)
-#define _warn_once(format, ...) \
-  if (sandbox_debug) \
-    _warn(format, ##__VA_ARGS__); \
+static int    debug_sandbox = -1;
+static int    warn_count = 0;
+#define debug(format, ...) \
+  if (debug_sandbox) \
+    fprintf(stderr, "SANDBOX DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
+#define warn(format, ...) fprintf(stderr, "SANDBOX WARNING[%d]: " format "\n", getpid(), ##__VA_ARGS__)
+#define warn_once(format, ...) \
+  if (debug_sandbox) \
+    warn(format, ##__VA_ARGS__); \
   else if (warn_count++ == 0) \
-    _warn(format " (further warnings suppressed)", ##__VA_ARGS__)
-#define _error(format, ...) fprintf(stderr, "ERROR[%d]: " format "\n", getpid(), __VA_ARGS__)
+    warn(format " (further warnings suppressed)", ##__VA_ARGS__)
+#define sandbox_error(format, ...) fprintf(stderr, "SANDBOX ERROR[%d]: " format "\n", getpid(), __VA_ARGS__)
 
 // Perform various initialization, which includes loading the original
 // glibc functions to be wrapped using dlsym().
 void load_original_functions() {
+
     // Debug sandbox library with FLOX_DEBUG_SANDBOX=1.
-    sandbox_debug = ( getenv( "FLOX_DEBUG_SANDBOX" ) != NULL );
+    debug_sandbox = ( getenv( "FLOX_DEBUG_SANDBOX" ) != NULL );
+
     // Derive audit level from FLOX_VIRTUAL_SANDBOX environment variable.
     const char * flox_virtual_sandbox_value = getenv( "FLOX_VIRTUAL_SANDBOX" );
     if (flox_virtual_sandbox_value == NULL ||
@@ -64,10 +78,11 @@ void load_original_functions() {
       // Pure mode is just like enforce, but invoked within the Nix sandbox.
       sandbox_level = 3;
     } else {
-      _warn_once( "FLOX_VIRTUAL_SANDBOX must be (off|warn|enforce|pure) ... ignoring" );
+      warn_once( "FLOX_VIRTUAL_SANDBOX must be (off|warn|enforce|pure) ... ignoring" );
       sandbox_level = 0;
     }
-    _debug( "sandbox_level=%d", sandbox_level );
+    debug( "sandbox_level=%d", sandbox_level );
+
     // Declare new functions to be intercepted here, then add stub
     // functions below.
     orig_open = dlsym(RTLD_NEXT, "open");
@@ -78,8 +93,15 @@ void load_original_functions() {
     orig_newfstatat = dlsym(RTLD_NEXT, "newfstatat");
 }
 
-bool check_argv0_path() {
+// Accessor method for determining sandbox_level defined as a
+// static int in this file.
+int get_sandbox_level() {
+    return sandbox_level;
+}
+
+bool sandbox_check_argv0() {
     static char argv0_path[PATH_MAX];
+    if (sandbox_level < 0) load_original_functions();
     // Identify the argv[0] realpath from /proc and flag if it's
     // not in the closure.
     // TODO: find way to detect changes in /proc/self/exe rather than
@@ -87,12 +109,12 @@ bool check_argv0_path() {
     if (realpath( "/proc/self/exe", argv0_path ) == NULL)
       {
         fprintf( stderr,
-                 "ERROR: check_argv0_path() realpath() failed\n" );
+                 "ERROR: sandbox_check_argv0() realpath() failed\n" );
         // If realpath() failed to set the realpath then explicitly
         // ensure our buffer returns an empty string.
         argv0_path[0] = '\0';
       }
-    _debug( "sandbox_level=%d, argv0=%s", sandbox_level, argv0_path );
+    debug( "sandbox_level=%d, argv0=%s", sandbox_level, argv0_path );
     // The use of certain paths like `/usr/bin/env` path is ubiquitous and
     // hardcoded to an extent that we cannot really expect developers to
     // replace it in code, so we instead allow exceptions for a limited
@@ -137,16 +159,16 @@ bool check_allowed_basenames( const char * pathname ) {
 // and hardcoded to an extent that we cannot really expect users to replace
 // references to it in code, so when invoking this path we suspend all
 // further path checking until argv0 is updated to a new path.
-bool check_path( const char * pathname ) {
+bool sandbox_check_path( const char * pathname ) {
     if (sandbox_level < 0) load_original_functions();
     if (sandbox_level == 0 || in_closure(pathname)) return true;
-    if (check_argv0_path()) return true;
+    if (sandbox_check_argv0()) return true;
     if (check_allowed_basenames(pathname)) return true;
     if (sandbox_level == 1) {
-        _warn( "%s is not in the closure", pathname );
+        warn( "%s is not in the closure", pathname );
         return true;
     } else {
-        _error( "%s is not in the closure", pathname );
+        sandbox_error( "%s is not in the closure", pathname );
         return false;
     }
 }
@@ -161,7 +183,7 @@ int open(const char *pathname, int flags, ...) {
         mode = va_arg(args, mode_t);
         va_end(args);
     }
-    if (check_path(pathname)) {
+    if (sandbox_check_path(pathname)) {
         return orig_open(pathname, flags, mode);
     } else {
         errno = EACCES;
@@ -179,7 +201,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
         mode = va_arg(args, mode_t);
         va_end(args);
     }
-    if (check_path(pathname)) {
+    if (sandbox_check_path(pathname)) {
         return orig_openat(dirfd, pathname, flags, mode);
     } else {
         errno = EACCES;
@@ -190,7 +212,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
 // Interceptor for stat
 int stat(const char *pathname, struct stat *statbuf) {
     if (!orig_stat) load_original_functions();
-    if (check_path(pathname)) {
+    if (sandbox_check_path(pathname)) {
         return orig_stat(pathname, statbuf);
     } else {
         errno = EACCES;
@@ -201,7 +223,7 @@ int stat(const char *pathname, struct stat *statbuf) {
 // Interceptor for lstat
 int lstat(const char *pathname, struct stat *statbuf) {
     if (!orig_lstat) load_original_functions();
-    if (check_path(pathname)) {
+    if (sandbox_check_path(pathname)) {
         return orig_lstat(pathname, statbuf);
     } else {
         errno = EACCES;
@@ -218,7 +240,7 @@ int fstat(int fd, struct stat *statbuf) {
 // Interceptor for newfstatat
 int newfstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags) {
     if (!orig_newfstatat) load_original_functions();
-    if (check_path(pathname)) {
+    if (sandbox_check_path(pathname)) {
         return orig_newfstatat(dirfd, pathname, statbuf, flags);
     } else {
         errno = EACCES;

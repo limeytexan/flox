@@ -5,10 +5,16 @@ REDCROSS = ❌
 # Define LD_FLOXLIB with macro to allow testing builds from other hosts.
 LD_FLOXLIB ?= $(abspath ld-floxlib.so)
 
-closure.o: closure.c closure.h
+closure.o: closure.c
 	$(CC) -fPIC -c $<
 
-ld-floxlib.so: ld-floxlib.c closure.o
+sandbox.o: sandbox.c closure.h
+	$(CC) -fPIC -c $<
+
+ld-floxlib.o: ld-floxlib.c sandbox.h
+	$(CC) -fPIC -c $<
+
+ld-floxlib.so: ld-floxlib.o sandbox.o closure.o
 	$(CC) -shared -fPIC $^ -o $@
 	# The ld-floxlib.so library only requires libc, which is guaranteed
 	# to either be already loaded or available by way of a default provided

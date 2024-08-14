@@ -14,11 +14,14 @@
  * start by reading closure paths into a btable from $FLOX_ENV/requisites.txt.
  */
 
-#include "closure.h"
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <limits.h>
+#include <stddef.h>
+#include <stdbool.h>
 
 // Declare version bindings to work with minimum supported GLIBC versions.
 #include "glibc-bindings.h"
@@ -26,9 +29,36 @@
 #define HASH_MULTIPLIER 31
 #define INITIAL_CAPACITY FLOX_ENV_CLOSURE_MAXENTRIES
 
-// Uncomment the following line for debugging.
-// #define _debug(format, ...) fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define _debug(format, ...) (void)0
+// Define the maximum number of paths to be tracked in the FLOX_ENV closure.
+// This is somewhat arbitrary but should be more than enough for most cases.
+#define FLOX_ENV_CLOSURE_MAXENTRIES 4096
+
+// Define the maximum length of a directory path in the FLOX_ENV_LIB_DIRS
+// environment variable. This is also somewhat arbitrary, but it should
+// be more than enough for most cases.
+#define FLOX_ENV_REQUISITE_MAXLEN PATH_MAX
+
+typedef struct {
+    char key[FLOX_ENV_REQUISITE_MAXLEN];
+    bool is_filled;
+} hash_entry_t;
+
+typedef struct {
+    hash_entry_t entries[FLOX_ENV_CLOSURE_MAXENTRIES];
+    size_t size;
+    size_t capacity;
+} hash_table_t;
+
+hash_table_t* hash_table_init(size_t capacity);
+int hash_table_store(hash_table_t *table, const char *key);
+bool hash_table_lookup(hash_table_t *table, const char *key);
+
+// Helper macros for printing debug, warnings, errors.
+static int    debug_closure = -1;
+static int    sandbox_warn_count = 0;
+#define debug(format, ...) \
+  if (debug_closure) \
+    fprintf(stderr, "CLOSURE DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
 
 // Temporary path buffer for calculating realpath of hash table queries.
 static char realpath_buf[PATH_MAX];
@@ -83,7 +113,7 @@ bool hash_table_lookup(hash_table_t *table, const char *key) {
     static char pkgbuf[PATH_MAX];
     (void) snprintf( pkgbuf, (pkgend-key)+1, "%s", key );
 
-    _debug("hash_table_lookup(%s), looking for %s in hashtable", key, pkgbuf);
+    debug("hash_table_lookup(%s), looking for %s in hashtable", key, pkgbuf);
 
     size_t index = hash(pkgbuf, table->capacity);
     while (table->entries[index].is_filled) {
@@ -92,7 +122,7 @@ bool hash_table_lookup(hash_table_t *table, const char *key) {
         // "/nix/store/12345678901234567890123456789012-foobar-1.2.3":
         //  ^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         //      10    1              32                1
-        _debug("comparing %s to %s", table->entries[index].key, pkgbuf);
+        debug("comparing %s to %s", table->entries[index].key, pkgbuf);
         if (strncmp(table->entries[index].key, pkgbuf, 44) == 0)
             return true;
         index = (index + 1) % table->capacity;
@@ -103,53 +133,8 @@ bool hash_table_lookup(hash_table_t *table, const char *key) {
 bool in_closure(const char *path) {
     static hash_table_t *table = NULL;
 
-
-// FIXME: these hacks belong in ld-floxlib.c and sandbox.c, because
-// there is context from knowing that we're dealing with ELF invocations
-// in the first instance, and general file access in the second. The
-// concept of "freepass" is only relevant to ELF invocations, while the
-// concept of allowed "basenames" is only relevant to general file access.
-
-
-    // The `/usr/bin/env` path is ubiquitous and hardcoded to an extent that
-    // we are faced with the choice of forcing developers to replace it in
-    // code, or simply let it be an allowed exception.
-    //
-    // Once requested by way of the la_version() call, we know that all
-    // libraries requested by this PID are similarly linked from /usr/bin/env
-    // so we can simply give all lookups a free pass.
-    //
-    // TODO: make this list of allowed exceptions configurable.
-    if ( freepass ) {
-        return true;
-    } else if (
-        strcmp(path, "/usr/bin/env") == 0 ||
-        strcmp(path, "/bin/sh") == 0 ||
-        strcmp(path, "/usr/bin/dash") == 0 ||
-        strcmp(path, ".") == 0
-    ) {
-        freepass = true;
-        return true;
-    }
-
-    // If the path does not start with a "/" then it is _probably_ a child
-    // of ".", and we can allow it to pass.
-    if (path[0] != '/') return true;
-
-    // There are other basenames that are also allowed, such as the source
-    // directory itself. Go through this [short] list now before accessing
-    // the hash table.
-    if ( strncmp(path, "/dev/", 5) == 0 ) return true;
-    if ( strncmp(path, "/sys/", 5) == 0 ) return true;
-    if ( strncmp(path, "/proc/", 6) == 0 ) return true;
-    const char *flox_src_dir = getenv("FLOX_SRC_DIR");
-    if (flox_src_dir) {
-        if ( strncmp(path, flox_src_dir, strlen(flox_src_dir)) == 0 &&
-          ( path[strlen(flox_src_dir)] == '/' || path[strlen(flox_src_dir)] == '\0' )
-        ) {
-            return true;
-        }
-    }
+    // Debug closure library with FLOX_DEBUG_CLOSURE=1.
+    debug_closure = ( getenv( "FLOX_DEBUG_CLOSURE" ) != NULL );
 
     if (!table) {
         const char *env_path = getenv("FLOX_ENV");
@@ -199,7 +184,7 @@ bool in_closure(const char *path) {
             count++;
         }
 
-        _debug("loaded %d entries from requisites.txt", count);
+        debug("loaded %d entries from requisites.txt", count);
     }
 
     if (realpath( path, realpath_buf ) == NULL)

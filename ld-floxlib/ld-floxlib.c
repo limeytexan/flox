@@ -30,10 +30,7 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "closure.h"
-
-// Declare version bindings to work with minimum supported GLIBC versions.
-#include "glibc-bindings.h"
+#include "sandbox.h"
 
 // Define the maximum number of directories that can be specified in
 // the FLOX_ENV_LIB_DIRS environment variable. This is a somewhat
@@ -45,29 +42,27 @@
 // be more than enough for most cases.
 #define FLOX_ENV_LIB_DIRS_MAXLEN PATH_MAX
 
-static int    audit_ld_floxlib = -1;
-static int    debug_ld_floxlib = -1;
-static int    sandbox_ld_floxlib = -1;
+static int    ld_floxlib_audit = -1;
+static int    ld_floxlib_debug = -1;
 static char   name_buf[PATH_MAX];
 static int    flox_env_lib_dirs_count = -1;
 static char   flox_env_lib_dirs_buf[FLOX_ENV_LIB_DIRS_MAXLEN];
 static char * flox_env_lib_dirs[FLOX_ENV_LIB_DIRS_MAXENTRIES];
-static char   argv0_path[PATH_MAX];
 static int    warn_count = 0;
 
-#define _debug(format, ...) \
-  if (debug_ld_floxlib) \
-    fprintf(stderr, "DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define _audit(format, ...) \
-  if ( audit_ld_floxlib || debug_ld_floxlib ) \
-    fprintf(stderr, "AUDIT[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define _warn(format, ...) fprintf(stderr, "WARNING[%d]: " format "\n", getpid(), ##__VA_ARGS__)
-#define _warn_once(format, ...) \
-  if (debug_ld_floxlib) \
-    _warn(format, ##__VA_ARGS__); \
+#define debug(format, ...) \
+  if (ld_floxlib_debug) \
+    fprintf(stderr, "FLOXLIB DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
+#define audit(format, ...) \
+  if ( ld_floxlib_audit || ld_floxlib_debug ) \
+    fprintf(stderr, "FLOXLIB AUDIT[%d]: " format "\n", getpid(), __VA_ARGS__)
+#define warn(format, ...) fprintf(stderr, "WARNING[%d]: " format "\n", getpid(), ##__VA_ARGS__)
+#define warn_once(format, ...) \
+  if (ld_floxlib_debug) \
+    warn(format, ##__VA_ARGS__); \
   else if (warn_count++ == 0) \
-    _warn(format " (further warnings suppressed)", ##__VA_ARGS__)
-#define _error(format, ...) fprintf(stderr, "ERROR[%d]: " format "\n", getpid(), __VA_ARGS__)
+    warn(format " (further warnings suppressed)", ##__VA_ARGS__)
+#define _error(format, ...) fprintf(stderr, "FLOXLIB ERROR[%d]: " format "\n", getpid(), __VA_ARGS__)
 
 unsigned int
 la_version( unsigned int version )
@@ -75,46 +70,7 @@ la_version( unsigned int version )
   // la_version() will be called on each and every ELF invocation that
   // exercises rtld, so this is our entrypoint to flag ELF invocations
   // from outside the FLOX_ENV closure.
-  if ( sandbox_ld_floxlib < 0 )
-    {
-      const char * flox_virtual_sandbox_value
-        = getenv( "FLOX_VIRTUAL_SANDBOX" );
-      if (flox_virtual_sandbox_value == NULL ||
-         (strcmp(flox_virtual_sandbox_value, "off") == 0)) {
-        sandbox_ld_floxlib = 0;
-      } else if (strcmp(flox_virtual_sandbox_value, "warn") == 0) {
-        sandbox_ld_floxlib = 1;
-      } else if (strcmp(flox_virtual_sandbox_value, "enforce") == 0) {
-        sandbox_ld_floxlib = 2;
-      } else {
-        _warn_once( "FLOX_VIRTUAL_SANDBOX must be (off|warn|enforce) ... ignoring" );
-        sandbox_ld_floxlib = 0;
-      }
-      // Identify the argv[0] realpath from /proc and flag if it's
-      // not in the closure.
-      if (realpath( "/proc/self/exe", argv0_path ) == NULL)
-        {
-          fprintf( stderr,
-                   "ERROR: la_version() realpath() failed\n" );
-          // If realpath() failed to set the realpath then explicitly
-          // ensure our buffer returns an empty string.
-          argv0_path[0] = '\0';
-        }
-    }
-
-  // At this point we have the argv[0] path and the sandbox_ld_floxlib
-  // value, so we can now check if the argv[0] path is in the closure.
-  if ( sandbox_ld_floxlib && ! in_closure( argv0_path ) ) {
-    if ( sandbox_ld_floxlib == 2 )
-      {
-        _error( "%s is not in the closure", argv0_path );
-        exit( 1 );
-      }
-    else
-      {
-        _warn( "%s is not in the closure", argv0_path );
-      }
-  }
+  sandbox_check_argv0();
 
   // Oh, and the one thing this function must do: return the version unchanged.
   return version;
@@ -123,12 +79,12 @@ la_version( unsigned int version )
 char *
 la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
 {
-  if ( debug_ld_floxlib < 0 )
+  if ( ld_floxlib_debug < 0 )
     {
-      debug_ld_floxlib = ( getenv( "LD_FLOXLIB_DEBUG" ) != NULL );
+      ld_floxlib_debug = ( getenv( "LD_FLOXLIB_DEBUG" ) != NULL );
     }
 
-  _debug( "la_objsearch(%s, %s)", name,
+  debug( "la_objsearch(%s, %s)", name,
           ( flag == LA_SER_ORIG )      ? "LA_SER_ORIG"
           : ( flag == LA_SER_LIBPATH ) ? "LA_SER_LIBPATH"
           : ( flag == LA_SER_RUNPATH ) ? "LA_SER_RUNPATH"
@@ -195,7 +151,7 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
                                   FLOX_ENV_LIB_DIRS_MAXENTRIES );
                           break;
                         }
-                      _debug( "la_objsearch() flox_env_lib_dirs[%d] = %s",
+                      debug( "la_objsearch() flox_env_lib_dirs[%d] = %s",
                               flox_env_lib_dirs_count,
                               flox_env_library_dir );
                       flox_env_lib_dirs[flox_env_lib_dirs_count]
@@ -218,17 +174,17 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
                                  "%s/%s",
                                  flox_env_lib_dirs[i],
                                  basename );
-                _debug( "la_objsearch() checking: %s", name_buf );
+                debug( "la_objsearch() checking: %s", name_buf );
                 fd = open( name_buf, O_RDONLY );
                 if ( fd != -1 )
                   {
                     close( fd );
-                    if ( audit_ld_floxlib < 0 )
+                    if ( ld_floxlib_audit < 0 )
                       {
-                        audit_ld_floxlib
+                        ld_floxlib_audit
                           = ( getenv( "LD_FLOXLIB_AUDIT" ) != NULL );
                       }
-                    _audit( "la_objsearch() resolved %s -> %s\n",
+                    audit( "la_objsearch() resolved %s -> %s\n",
                             name,
                             name_buf );
                     return name_buf;
@@ -238,18 +194,18 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
         }
     }
 
-  if ( sandbox_ld_floxlib && *name == '/' ) {
-   if ( in_closure( name ) ) {
-     _debug("%s confirmed in closure", name);
+  if ( get_sandbox_level() && *name == '/' ) {
+   if ( sandbox_check_path( name ) ) {
+     debug("%s confirmed in closure", name);
    } else {
-    if ( sandbox_ld_floxlib == 2 )
+    if ( get_sandbox_level() == 2 )
       {
         _error( "%s is not in the closure", name );
         exit( 1 );
       }
     else
       {
-        _warn_once( "%s is not in the closure", name );
+        warn_once( "%s is not in the closure", name );
       }
    }
   }

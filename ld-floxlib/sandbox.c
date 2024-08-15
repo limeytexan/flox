@@ -56,7 +56,7 @@ static int    warn_count = 0;
     warn(format, ##__VA_ARGS__); \
   else if (warn_count++ == 0) \
     warn(format " (further warnings suppressed)", ##__VA_ARGS__)
-#define sandbox_error(format, ...) fprintf(stderr, "SANDBOX ERROR[%d]: " format "\n", getpid(), __VA_ARGS__)
+#define _error(format, ...) fprintf(stderr, "SANDBOX ERROR[%d]: " format "\n", getpid(), ##__VA_ARGS__)
 
 // Perform various initialization, which includes loading the original
 // glibc functions to be wrapped using dlsym().
@@ -108,13 +108,11 @@ bool sandbox_check_argv0() {
     //       running realpath() on every path access.
     if (realpath( "/proc/self/exe", argv0_path ) == NULL)
       {
-        fprintf( stderr,
-                 "ERROR: sandbox_check_argv0() realpath() failed\n" );
+        _error( "sandbox_check_argv0() realpath() failed\n" );
         // If realpath() failed to set the realpath then explicitly
         // ensure our buffer returns an empty string.
         argv0_path[0] = '\0';
       }
-    debug( "sandbox_level=%d, argv0=%s", sandbox_level, argv0_path );
     // The use of certain paths like `/usr/bin/env` path is ubiquitous and
     // hardcoded to an extent that we cannot really expect developers to
     // replace it in code, so we instead allow exceptions for a limited
@@ -128,7 +126,13 @@ bool sandbox_check_argv0() {
         strcmp(argv0_path, "/usr/bin/env") == 0 ||
         strcmp(argv0_path, "/bin/sh") == 0 ||
         strcmp(argv0_path, "/usr/bin/dash") == 0
-    ) return true;
+    ) {
+      debug( "%s is a permitted argv0", argv0_path );
+      return true;
+    } else {
+      debug( "%s is a not permitted argv0", argv0_path );
+      return false;
+    }
 }
 
 // Some paths are derived from allowed basenames.
@@ -142,10 +146,25 @@ bool check_allowed_basenames( const char * pathname ) {
 	if ( strncmp(pathname, flox_src_dir, strlen(flox_src_dir)) == 0 &&
 	  ( pathname[strlen(flox_src_dir)] == '/' || pathname[strlen(flox_src_dir)] == '\0' )
 	) {
+            debug( "%s is an allowed basename", pathname );
 	    return true;
 	}
     }
+    debug( "%s is not an allowed basename", pathname );
     return false;
+}
+
+// Some absolute paths like "." are always permitted.
+bool check_allowed_abspaths( const char * pathname ) {
+    if (
+        strncmp(pathname, ".", 1) == 0
+    ) {
+        debug( "%s is an allowed abspath", pathname );
+        return true;
+    } else {
+        debug( "%s is not an allowed abspath", pathname );
+        return false;
+    }
 }
 
 // Check if path access represents something that may not be reproducible
@@ -161,14 +180,16 @@ bool check_allowed_basenames( const char * pathname ) {
 // further path checking until argv0 is updated to a new path.
 bool sandbox_check_path( const char * pathname ) {
     if (sandbox_level < 0) load_original_functions();
-    if (sandbox_level == 0 || in_closure(pathname)) return true;
+    if (sandbox_level == 0) return true;
+    if (in_closure(pathname)) return true;
     if (sandbox_check_argv0()) return true;
     if (check_allowed_basenames(pathname)) return true;
+    if (check_allowed_abspaths(pathname)) return true;
     if (sandbox_level == 1) {
-        warn( "%s is not in the closure", pathname );
+        warn( "%s is not in the sandbox", pathname );
         return true;
     } else {
-        sandbox_error( "%s is not in the closure", pathname );
+        _error( "%s is not in the sandbox", pathname );
         return false;
     }
 }
@@ -176,6 +197,7 @@ bool sandbox_check_path( const char * pathname ) {
 // Interceptor for open
 int open(const char *pathname, int flags, ...) {
     if (!orig_open) load_original_functions();
+    debug("open(%s)", pathname);
     mode_t mode = 0;
     if (flags & O_CREAT) {
         va_list args;
@@ -194,6 +216,7 @@ int open(const char *pathname, int flags, ...) {
 // Interceptor for openat
 int openat(int dirfd, const char *pathname, int flags, ...) {
     if (!orig_openat) load_original_functions();
+    debug("openat(%s)", pathname);
     mode_t mode = 0;
     if (flags & O_CREAT) {
         va_list args;
@@ -212,6 +235,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
 // Interceptor for stat
 int stat(const char *pathname, struct stat *statbuf) {
     if (!orig_stat) load_original_functions();
+    debug("stat(%s)", pathname);
     if (sandbox_check_path(pathname)) {
         return orig_stat(pathname, statbuf);
     } else {
@@ -223,6 +247,7 @@ int stat(const char *pathname, struct stat *statbuf) {
 // Interceptor for lstat
 int lstat(const char *pathname, struct stat *statbuf) {
     if (!orig_lstat) load_original_functions();
+    debug("lstat(%s)", pathname);
     if (sandbox_check_path(pathname)) {
         return orig_lstat(pathname, statbuf);
     } else {
@@ -234,12 +259,14 @@ int lstat(const char *pathname, struct stat *statbuf) {
 // Interceptor for fstat
 int fstat(int fd, struct stat *statbuf) {
     if (!orig_fstat) load_original_functions();
+    debug("fstat(%d)", fd);
     return orig_fstat(fd, statbuf);
 }
 
 // Interceptor for newfstatat
 int newfstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags) {
     if (!orig_newfstatat) load_original_functions();
+    debug("newfstatat(%s)", pathname);
     if (sandbox_check_path(pathname)) {
         return orig_newfstatat(dirfd, pathname, statbuf, flags);
     } else {

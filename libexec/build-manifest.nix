@@ -1,7 +1,6 @@
 {
   pkgs ? import <nixpkgs> {},
   name,
-  flox-cli ? "__FLOX_CLI_OUTPATH__",
   flox-env,
   install-prefix,
   srcTarball ? null, # optional

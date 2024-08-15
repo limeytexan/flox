@@ -194,6 +194,7 @@ in
           mkdir -p $out/lib
           cp ${ld-floxlib}/lib/libsandbox.so $out/lib
           ln -s ${ld-floxlib}/lib/libsandbox.so $out/lib
+          ln -s ${ld-floxlib}/lib/ld-floxlib.so $out/lib
         '';
 
       doInstallCheck = false;

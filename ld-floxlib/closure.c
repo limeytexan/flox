@@ -123,10 +123,13 @@ bool hash_table_lookup(hash_table_t *table, const char *key) {
         //  ^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         //      10    1              32                1
         debug("comparing %s to %s", table->entries[index].key, pkgbuf);
-        if (strncmp(table->entries[index].key, pkgbuf, 44) == 0)
+        if (strncmp(table->entries[index].key, pkgbuf, 44) == 0) {
+            debug( "%s is in the closure", key );
             return true;
+	}
         index = (index + 1) % table->capacity;
     }
+    debug( "%s is not in the closure", key );
     return false;
 }
 
@@ -191,6 +194,7 @@ bool in_closure(const char *path) {
       {
         // Likely that path does not exist, so just return true
 	// so that the real system call can return ENOENT.
+        debug( "%s not found, allowing sandbox access", path );
 	return true;
       }
 

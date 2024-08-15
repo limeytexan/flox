@@ -86,12 +86,11 @@ define BUILD_local_template =
   .INTERMEDIATE: $(_pname)_local_build
   $(_pname)_local_build: $($(_pvarname)_buildScript)
 	@echo "Building $(_name) in local mode"
-	$(if $(_virtualSandbox),LD_PRELOAD=$(realpath __FLOX_CLI_OUTPATH__/lib/libsandbox.so) FLOX_SRC_DIR=$$$$(pwd) FLOX_VIRTUAL_SANDBOX=$(strip $(_virtualSandbox))) \
+	$(if $(_virtualSandbox),LD_PRELOAD=__FLOX_CLI_OUTPATH__/lib/ld-floxlib.so FLOX_SRC_DIR=$$$$(pwd) FLOX_VIRTUAL_SANDBOX=$(strip $(_virtualSandbox))) \
 	MAKEFLAGS= FLOX_TURBO=1 out=$(_out) $(FLOX_ENV)/activate bash -e $($(_pvarname)_buildScript)
 	nix --extra-experimental-features nix-command \
 	  build -L --file __FLOX_CLI_OUTPATH__/libexec/build-manifest.nix \
 	    --argstr name "$(_name)" \
-	    --argstr flox-cli "__FLOX_CLI_OUTPATH__" \
 	    --argstr flox-env "$(FLOX_ENV)" \
 	    --argstr install-prefix "$(_out)" \
 	    $(if $(_virtualSandbox),--argstr virtualSandbox "$(strip $(_virtualSandbox))") \
@@ -148,7 +147,6 @@ define BUILD_sandbox_template =
 	nix --extra-experimental-features nix-command \
 	  build -L --file __FLOX_CLI_OUTPATH__/libexec/build-manifest.nix \
 	    --argstr name "$(_name)" \
-	    --argstr flox-cli "__FLOX_CLI_OUTPATH__" \
 	    --argstr srcTarball "$($(_pvarname)_src_tgz)" \
 	    --argstr flox-env "$(FLOX_ENV)" \
 	    --argstr install-prefix "$(_out)" \

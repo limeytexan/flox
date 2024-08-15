@@ -56,20 +56,25 @@ static int    warn_count = 0;
 #define audit(format, ...) \
   if ( ld_floxlib_audit || ld_floxlib_debug ) \
     fprintf(stderr, "FLOXLIB AUDIT[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define warn(format, ...) fprintf(stderr, "WARNING[%d]: " format "\n", getpid(), ##__VA_ARGS__)
+#define warn(format, ...) fprintf(stderr, "FLOXLIB WARNING[%d]: " format "\n", getpid(), ##__VA_ARGS__)
 #define warn_once(format, ...) \
   if (ld_floxlib_debug) \
     warn(format, ##__VA_ARGS__); \
   else if (warn_count++ == 0) \
     warn(format " (further warnings suppressed)", ##__VA_ARGS__)
-#define _error(format, ...) fprintf(stderr, "FLOXLIB ERROR[%d]: " format "\n", getpid(), __VA_ARGS__)
+#define _error(format, ...) fprintf(stderr, "FLOXLIB ERROR[%d]: " format "\n", getpid(), ##__VA_ARGS__)
 
 unsigned int
 la_version( unsigned int version )
 {
   // la_version() will be called on each and every ELF invocation that
-  // exercises rtld, so this is our entrypoint to flag ELF invocations
-  // from outside the FLOX_ENV closure.
+  // exercises rtld, so this is our entrypoint to initialize debugging
+  // and flag ELF invocations from outside the FLOX_ENV closure.
+  if ( ld_floxlib_debug < 0 )
+    {
+      ld_floxlib_debug = ( getenv( "LD_FLOXLIB_DEBUG" ) != NULL );
+      debug("INIT prefix=%s", "@@out@@");
+    }
   sandbox_check_argv0();
 
   // Oh, and the one thing this function must do: return the version unchanged.
@@ -79,11 +84,6 @@ la_version( unsigned int version )
 char *
 la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
 {
-  if ( ld_floxlib_debug < 0 )
-    {
-      ld_floxlib_debug = ( getenv( "LD_FLOXLIB_DEBUG" ) != NULL );
-    }
-
   debug( "la_objsearch(%s, %s)", name,
           ( flag == LA_SER_ORIG )      ? "LA_SER_ORIG"
           : ( flag == LA_SER_LIBPATH ) ? "LA_SER_LIBPATH"
@@ -120,11 +120,9 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
                   if ( sizeof( flox_env_lib_dirs_env )
                        >= FLOX_ENV_LIB_DIRS_MAXLEN )
                     {
-                      fprintf( stderr,
-                               "ERROR: la_objsearch() "
-                               "FLOX_ENV_LIB_DIRS is too long, "
-                               "truncating to %d characters\n",
-                               FLOX_ENV_LIB_DIRS_MAXLEN );
+                      _error( "la_objsearch() FLOX_ENV_LIB_DIRS is too long, "
+                             "truncating to %d characters\n",
+                             FLOX_ENV_LIB_DIRS_MAXLEN );
                     }
 
                   strncpy( flox_env_lib_dirs_buf,
@@ -195,20 +193,20 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
     }
 
   if ( get_sandbox_level() && *name == '/' ) {
-   if ( sandbox_check_path( name ) ) {
-     debug("%s confirmed in closure", name);
-   } else {
-    if ( get_sandbox_level() == 2 )
-      {
-        _error( "%s is not in the closure", name );
-        exit( 1 );
+    if ( sandbox_check_path( name ) ) {
+      debug("%s confirmed in closure", name);
+    } else {
+      if ( get_sandbox_level() == 2 )
+        {
+          _error( "%s is not in the closure", name );
+          exit( 1 );
+        }
+      else
+        {
+          warn_once( "%s is not in the closure", name );
+        }
       }
-    else
-      {
-        warn_once( "%s is not in the closure", name );
-      }
-   }
-  }
+    }
 
   return (char *) name;
 }

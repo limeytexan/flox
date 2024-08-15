@@ -137,9 +137,22 @@ bool sandbox_check_argv0() {
 
 // Some paths are derived from allowed basenames.
 bool check_allowed_basenames( const char * pathname ) {
-    if ( strncmp(pathname, "/dev/", 5) == 0 ) return true;
-    if ( strncmp(pathname, "/sys/", 5) == 0 ) return true;
-    if ( strncmp(pathname, "/proc/", 6) == 0 ) return true;
+    if ( strncmp(pathname, "/tmp/", 5) == 0 ) {
+        debug( "%s is an allowed basename", "/tmp/");
+        return true;
+    }
+    if ( strncmp(pathname, "/dev/", 5) == 0 ) {
+        debug( "%s is an allowed basename", "/dev/");
+        return true;
+    }
+    if ( strncmp(pathname, "/sys/", 5) == 0 ) {
+        debug( "%s is an allowed basename", "/sys/");
+        return true;
+    }
+    if ( strncmp(pathname, "/proc/", 6) == 0 ) {
+        debug( "%s is an allowed basename", "/proc/");
+        return true;
+    }
     // TODO: evaluate FLOX_SRC_DIR just once
     const char *flox_src_dir = getenv("FLOX_SRC_DIR");
     if (flox_src_dir) {
@@ -167,6 +180,18 @@ bool check_allowed_abspaths( const char * pathname ) {
     }
 }
 
+// Forward declaration of sandbox_check_path().
+bool sandbox_check_path( const char * pathname );
+
+// Calculate the realpath of the path, and if it's different from
+// the original then start over, otherwise return false.
+bool recheck_realpath( const char * pathname ) {
+    static char real_path[PATH_MAX];
+    if (realpath( pathname, real_path ) == NULL) return false;
+    if (strcmp(pathname, real_path) == 0) return false;
+    return sandbox_check_path( real_path );
+}
+
 // Check if path access represents something that may not be reproducible
 // on another machine. Any path within the environment's closure is fine,
 // but there are also other specific paths and basenames accessed during a
@@ -181,10 +206,12 @@ bool check_allowed_abspaths( const char * pathname ) {
 bool sandbox_check_path( const char * pathname ) {
     if (sandbox_level < 0) load_original_functions();
     if (sandbox_level == 0) return true;
+    debug( "sandbox_check_path(%s), sandbox_level=%d", pathname, sandbox_level );
     if (in_closure(pathname)) return true;
     if (sandbox_check_argv0()) return true;
     if (check_allowed_basenames(pathname)) return true;
     if (check_allowed_abspaths(pathname)) return true;
+    if (recheck_realpath(pathname)) return true;
     if (sandbox_level == 1) {
         warn( "%s is not in the sandbox", pathname );
         return true;
@@ -232,6 +259,8 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
     }
 }
 
+/*
+
 // Interceptor for stat
 int stat(const char *pathname, struct stat *statbuf) {
     if (!orig_stat) load_original_functions();
@@ -274,3 +303,5 @@ int newfstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags)
         return -1;
     }
 }
+
+*/

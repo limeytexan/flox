@@ -126,7 +126,7 @@ bool hash_table_lookup(hash_table_t *table, const char *key) {
         if (strncmp(table->entries[index].key, pkgbuf, 44) == 0) {
             debug( "%s is in the closure", key );
             return true;
-	}
+        }
         index = (index + 1) % table->capacity;
     }
     debug( "%s is not in the closure", key );
@@ -169,8 +169,8 @@ bool in_closure(const char *path) {
         }
         fclose(file);
 
-	// Because this library will itself be loaded on account of its presence
-	// in LD_PRELOAD, we should ensure that we don't trip over ourselves.
+        // Because this library will itself be loaded on account of its presence
+        // in LD_PRELOAD, we should ensure that we don't trip over ourselves.
         if (hash_table_store(table, "@@out@@") != 0) {
             fprintf(stderr, "Error: Hash table is full, cannot store more paths\n");
         }
@@ -193,9 +193,9 @@ bool in_closure(const char *path) {
     if (realpath( path, realpath_buf ) == NULL)
       {
         // Likely that path does not exist, so just return true
-	// so that the real system call can return ENOENT.
+        // so that the real system call can return ENOENT.
         debug( "%s not found, allowing sandbox access", path );
-	return true;
+        return true;
       }
 
     return hash_table_lookup(table, realpath_buf);

@@ -56,7 +56,7 @@ static int    warn_count = 0;
 
 // Perform various initialization, which includes loading the original
 // glibc functions to be wrapped using dlsym().
-void load_original_functions() {
+void sandbox_init() {
 
     // Debug sandbox library with FLOX_DEBUG_SANDBOX=1.
     debug_sandbox = ( getenv( "FLOX_DEBUG_SANDBOX" ) != NULL );
@@ -93,7 +93,7 @@ int get_sandbox_level() {
 
 bool sandbox_check_argv0() {
     static char argv0_path[PATH_MAX];
-    if (sandbox_level < 0) load_original_functions();
+    if (sandbox_level < 0) sandbox_init();
     // Identify the argv[0] realpath from /proc and flag if it's
     // not in the closure.
     // TODO: find way to detect changes in /proc/self/exe rather than
@@ -122,7 +122,6 @@ bool sandbox_check_argv0() {
       debug( "%s is a permitted argv0", argv0_path );
       return true;
     } else {
-      debug( "%s is a not permitted argv0", argv0_path );
       return false;
     }
 }
@@ -211,16 +210,14 @@ bool check_allowed_basenames( const char * pathname ) {
   static int i;
   for ( i = 0; i < allow_dirs_count; i++ )
     {
-	if ( strncmp(pathname, allow_dirs[i], strlen(allow_dirs[i])) == 0 &&
-	  ( pathname[strlen(allow_dirs[i])] == '/' || pathname[strlen(allow_dirs[i])] == '\0' )
-	) {
+        if ( strncmp(pathname, allow_dirs[i], strlen(allow_dirs[i])) == 0 &&
+          ( pathname[strlen(allow_dirs[i])] == '/' || pathname[strlen(allow_dirs[i])] == '\0' )
+        ) {
             debug( "%s is an allowed basename", pathname );
-	    return true;
-	}
+            return true;
+        }
     }
-
-    debug( "%s is not an allowed basename", pathname );
-    return false;
+  return false;
 }
 
 // Forward declaration of sandbox_check_path().
@@ -239,9 +236,9 @@ bool sandbox_check_path( const char * pathname );
 // further path checking until argv0 is updated to a new path.
 bool sandbox_check_path( const char * pathname ) {
     static char real_path[PATH_MAX];
-    if (sandbox_level < 0) load_original_functions();
+    if (sandbox_level < 0) sandbox_init();
     if (sandbox_level == 0) return true;
-    debug( "sandbox_check_path(%s), sandbox_level=%d", pathname, sandbox_level );
+    debug( "sandbox_check_path('%s'), sandbox_level=%d", pathname, sandbox_level );
     if (sandbox_check_argv0()) return true;
 
     // From here on out, operate on realpath. If a file doesn't exist
@@ -260,8 +257,7 @@ bool sandbox_check_path( const char * pathname ) {
 
 // Interceptor for open
 int open(const char *pathname, int flags, ...) {
-    if (!orig_open) load_original_functions();
-    debug("open(%s)", pathname);
+    if (!orig_open) sandbox_init();
     mode_t mode = 0;
     if (flags & O_CREAT) {
         va_list args;
@@ -279,8 +275,7 @@ int open(const char *pathname, int flags, ...) {
 
 // Interceptor for openat
 int openat(int dirfd, const char *pathname, int flags, ...) {
-    if (!orig_openat) load_original_functions();
-    debug("openat(%s)", pathname);
+    if (!orig_openat) sandbox_init();
     mode_t mode = 0;
     if (flags & O_CREAT) {
         va_list args;

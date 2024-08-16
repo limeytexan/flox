@@ -5,22 +5,16 @@ REDCROSS = ❌
 # Define LD_FLOXLIB with macro to allow testing builds from other hosts.
 LD_FLOXLIB ?= $(abspath ld-floxlib.so)
 
-closure.o: closure.c
-	$(CC) -fPIC -c $<
-
-sandbox.o: sandbox.c closure.h
-	$(CC) -fPIC -c $<
-
-ld-floxlib.o: ld-floxlib.c sandbox.h
-	$(CC) -fPIC -c $<
-
-ld-floxlib.so: ld-floxlib.o sandbox.o closure.o
-	$(CC) -shared -fPIC $^ -o $@
+ld-floxlib.so: ld-floxlib.c
+	$(CC) -shared -fPIC $< -o $@
 	# The ld-floxlib.so library only requires libc, which is guaranteed
 	# to either be already loaded or available by way of a default provided
 	# by the linker itself, so to avoid loading a different libc than the
 	# one already loaded we remove RPATH/RUNPATH from the shared library.
 	patchelf --remove-rpath $@
+
+closure.o: closure.c closure.h
+	$(CC) -fPIC -c $<
 
 libsandbox.so: sandbox.c closure.o
 	$(CC) -shared -fPIC $^ -o $@

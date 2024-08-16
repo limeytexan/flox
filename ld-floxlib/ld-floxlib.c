@@ -30,7 +30,31 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "sandbox.h"
+
+// Declare version bindings to work with minimum supported GLIBC versions.
+#if defined( __aarch64__ )
+// aarch64 Linux only goes back to 2.17.
+__asm__( ".symver close,close@GLIBC_2.17" );
+__asm__( ".symver fprintf,fprintf@GLIBC_2.17" );
+__asm__( ".symver getenv,getenv@GLIBC_2.17" );
+__asm__( ".symver open,open@GLIBC_2.17" );
+__asm__( ".symver snprintf,snprintf@GLIBC_2.17" );
+__asm__( ".symver stderr,stderr@GLIBC_2.17" );
+__asm__( ".symver strrchr,strrchr@GLIBC_2.17" );
+__asm__( ".symver strtok,strtok@GLIBC_2.17" );
+#elif defined( __x86_64__ )
+// x86_64 Linux goes back to 2.2.5.
+__asm__( ".symver close,close@GLIBC_2.2.5" );
+__asm__( ".symver fprintf,fprintf@GLIBC_2.2.5" );
+__asm__( ".symver getenv,getenv@GLIBC_2.2.5" );
+__asm__( ".symver open,open@GLIBC_2.2.5" );
+__asm__( ".symver snprintf,snprintf@GLIBC_2.2.5" );
+__asm__( ".symver stderr,stderr@GLIBC_2.2.5" );
+__asm__( ".symver strrchr,strrchr@GLIBC_2.2.5" );
+__asm__( ".symver strtok,strtok@GLIBC_2.2.5" );
+#else
+// Punt .. just go with default symbol bindings and hope for the best.
+#endif
 
 // Define the maximum number of directories that can be specified in
 // the FLOX_ENV_LIB_DIRS environment variable. This is a somewhat
@@ -42,56 +66,40 @@
 // be more than enough for most cases.
 #define FLOX_ENV_LIB_DIRS_MAXLEN PATH_MAX
 
-static int    ld_floxlib_audit = -1;
-static int    ld_floxlib_debug = -1;
+static int    audit_ld_floxlib = -1;
+static int    debug_ld_floxlib = -1;
 static char   name_buf[PATH_MAX];
 static int    flox_env_lib_dirs_count = -1;
 static char   flox_env_lib_dirs_buf[FLOX_ENV_LIB_DIRS_MAXLEN];
 static char * flox_env_lib_dirs[FLOX_ENV_LIB_DIRS_MAXENTRIES];
-static int    warn_count = 0;
-
-#define debug(format, ...) \
-  if (ld_floxlib_debug) \
-    fprintf(stderr, "FLOXLIB DEBUG[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define audit(format, ...) \
-  if ( ld_floxlib_audit || ld_floxlib_debug ) \
-    fprintf(stderr, "FLOXLIB AUDIT[%d]: " format "\n", getpid(), __VA_ARGS__)
-#define warn(format, ...) fprintf(stderr, "FLOXLIB WARNING[%d]: " format "\n", getpid(), ##__VA_ARGS__)
-#define warn_once(format, ...) \
-  if (ld_floxlib_debug) \
-    warn(format, ##__VA_ARGS__); \
-  else if (warn_count++ == 0) \
-    warn(format " (further warnings suppressed)", ##__VA_ARGS__)
-#define _error(format, ...) fprintf(stderr, "FLOXLIB ERROR[%d]: " format "\n", getpid(), ##__VA_ARGS__)
 
 unsigned int
 la_version( unsigned int version )
 {
-  // la_version() will be called on each and every ELF invocation that
-  // exercises rtld, so this is our entrypoint to initialize debugging
-  // and flag ELF invocations from outside the FLOX_ENV closure.
-  if ( ld_floxlib_debug < 0 )
-    {
-      ld_floxlib_debug = ( getenv( "LD_FLOXLIB_DEBUG" ) != NULL );
-      debug("INIT prefix=%s", "@@out@@");
-    }
-  sandbox_check_argv0();
-
-  // Oh, and the one thing this function must do: return the version unchanged.
   return version;
 }
 
 char *
 la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
 {
-  debug( "la_objsearch(%s, %s)", name,
-          ( flag == LA_SER_ORIG )      ? "LA_SER_ORIG"
-          : ( flag == LA_SER_LIBPATH ) ? "LA_SER_LIBPATH"
-          : ( flag == LA_SER_RUNPATH ) ? "LA_SER_RUNPATH"
-          : ( flag == LA_SER_DEFAULT ) ? "LA_SER_DEFAULT"
-          : ( flag == LA_SER_CONFIG )  ? "LA_SER_CONFIG"
-          : ( flag == LA_SER_SECURE )  ? "LA_SER_SECURE"
-                                       : "???" );
+  if ( debug_ld_floxlib < 0 )
+    {
+      debug_ld_floxlib = ( getenv( "LD_FLOXLIB_DEBUG" ) != NULL );
+    }
+
+  if ( debug_ld_floxlib )
+    {
+      fprintf( stderr,
+               "DEBUG: la_objsearch(%s, %s)\n",
+               name,
+               ( flag == LA_SER_ORIG )      ? "LA_SER_ORIG"
+               : ( flag == LA_SER_LIBPATH ) ? "LA_SER_LIBPATH"
+               : ( flag == LA_SER_RUNPATH ) ? "LA_SER_RUNPATH"
+               : ( flag == LA_SER_DEFAULT ) ? "LA_SER_DEFAULT"
+               : ( flag == LA_SER_CONFIG )  ? "LA_SER_CONFIG"
+               : ( flag == LA_SER_SECURE )  ? "LA_SER_SECURE"
+                                            : "???" );
+    }
 
   // Only look for the library once the dynamic linker has exhausted
   // all of the other possible search locations, and only if it isn't
@@ -120,9 +128,11 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
                   if ( sizeof( flox_env_lib_dirs_env )
                        >= FLOX_ENV_LIB_DIRS_MAXLEN )
                     {
-                      _error( "la_objsearch() FLOX_ENV_LIB_DIRS is too long, "
-                             "truncating to %d characters\n",
-                             FLOX_ENV_LIB_DIRS_MAXLEN );
+                      fprintf( stderr,
+                               "ERROR: la_objsearch() "
+                               "FLOX_ENV_LIB_DIRS is too long, "
+                               "truncating to %d characters\n",
+                               FLOX_ENV_LIB_DIRS_MAXLEN );
                     }
 
                   strncpy( flox_env_lib_dirs_buf,
@@ -143,15 +153,21 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
                       if ( flox_env_lib_dirs_count
                            >= FLOX_ENV_LIB_DIRS_MAXENTRIES )
                         {
-                          _error( "la_objsearch() "
-                                  "FLOX_ENV_LIB_DIRS has too many entries, "
-                                  "truncating to the first %d",
-                                  FLOX_ENV_LIB_DIRS_MAXENTRIES );
+                          fprintf( stderr,
+                                   "ERROR: la_objsearch() "
+                                   "FLOX_ENV_LIB_DIRS has too many entries, "
+                                   "truncating to the first %d\n",
+                                   FLOX_ENV_LIB_DIRS_MAXENTRIES );
                           break;
                         }
-                      debug( "la_objsearch() flox_env_lib_dirs[%d] = %s",
-                              flox_env_lib_dirs_count,
-                              flox_env_library_dir );
+                      if ( debug_ld_floxlib )
+                        {
+                          fprintf( stderr,
+                                   "DEBUG: la_objsearch() "
+                                   "flox_env_lib_dirs[%d] = %s\n",
+                                   flox_env_lib_dirs_count,
+                                   flox_env_library_dir );
+                        }
                       flox_env_lib_dirs[flox_env_lib_dirs_count]
                         = flox_env_library_dir;
                       flox_env_library_dir = strtok_r( NULL, ":", &saveptr );
@@ -166,46 +182,40 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
           static int i;
           for ( i = 0; i < flox_env_lib_dirs_count; i++ )
             {
+              {
                 (void) snprintf( name_buf,
                                  sizeof( name_buf ),
                                  "%s/%s",
                                  flox_env_lib_dirs[i],
                                  basename );
-                debug( "la_objsearch() checking: %s", name_buf );
+                if ( debug_ld_floxlib )
+                  {
+                    fprintf( stderr,
+                             "DEBUG: la_objsearch() checking: %s\n",
+                             name_buf );
+                  }
                 fd = open( name_buf, O_RDONLY );
                 if ( fd != -1 )
                   {
                     close( fd );
-                    if ( ld_floxlib_audit < 0 )
+                    if ( audit_ld_floxlib < 0 )
                       {
-                        ld_floxlib_audit
+                        audit_ld_floxlib
                           = ( getenv( "LD_FLOXLIB_AUDIT" ) != NULL );
                       }
-                    audit( "la_objsearch() resolved %s -> %s\n",
-                            name,
-                            name_buf );
+                    if ( audit_ld_floxlib || debug_ld_floxlib )
+                      {
+                        fprintf( stderr,
+                                 "AUDIT: la_objsearch() resolved %s -> %s\n",
+                                 name,
+                                 name_buf );
+                      }
                     return name_buf;
                   }
+              }
             }
         }
     }
-
-  if ( get_sandbox_level() && *name == '/' ) {
-    if ( sandbox_check_path( name ) ) {
-      debug("%s confirmed in closure", name);
-    } else {
-      if ( get_sandbox_level() == 2 )
-        {
-          _error( "%s is not in the closure", name );
-          exit( 1 );
-        }
-      else
-        {
-          warn_once( "%s is not in the closure", name );
-        }
-      }
-    }
-
   return (char *) name;
 }
 /* vim: set et ts=4: */

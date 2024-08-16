@@ -1,6 +1,14 @@
 .DEFAULT_GOAL = ld-floxlib.so
 GREENCHECK = ✅
 REDCROSS = ❌
+OS := $(shell uname -s)
+
+INSTALL = libsandbox.so
+TESTS = sandbox-tests
+ifeq (Linux,$(OS))
+  INSTALL += ld-floxlib.so
+  TESTS += ld-audit-tests
+endif
 
 # Define LD_FLOXLIB with macro to allow testing builds from other hosts.
 LD_FLOXLIB ?= $(abspath ld-floxlib.so)
@@ -25,7 +33,7 @@ libsandbox.so: sandbox.c closure.o
 	patchelf --remove-rpath $@
 
 .PHONY: install
-install: ld-floxlib.so libsandbox.so
+install: $(INSTALL)
 	mkdir -p $(PREFIX)/lib
 	cp $^ $(PREFIX)/lib
 
@@ -146,5 +154,12 @@ $(eval $(call integration_test_TEMPLATE,$(strip \
   test3     1 \
 )))
 
-.PHONY: test
-test: $(unit_tests) $(integration_tests)
+.PHONY: ld-audit-tests
+ld-audit-tests: $(unit_tests) $(integration_tests)
+
+.PHONY: sandbox-tests
+sandbox-tests:
+	@echo TODO: create sandbox tests
+
+.PHONY: tests
+tests: $(TESTS)

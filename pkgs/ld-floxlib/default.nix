@@ -12,7 +12,6 @@ stdenv.mkDerivation {
   };
   postPatch = ''
     substituteInPlace closure.c --replace '@@out@@' "$out"
-    substituteInPlace ld-floxlib.c --replace '@@out@@' "$out"
   '';
   makeFlags = ["PREFIX=$(out)"];
   doCheck = true;

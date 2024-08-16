@@ -166,7 +166,6 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
           static int i;
           for ( i = 0; i < flox_env_lib_dirs_count; i++ )
             {
-              {
                 (void) snprintf( name_buf,
                                  sizeof( name_buf ),
                                  "%s/%s",
@@ -187,7 +186,6 @@ la_objsearch( const char * name, uintptr_t * cookie, unsigned int flag )
                             name_buf );
                     return name_buf;
                   }
-              }
             }
         }
     }

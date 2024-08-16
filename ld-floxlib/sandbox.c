@@ -136,61 +136,103 @@ bool sandbox_check_argv0() {
 }
 
 // Some paths are derived from allowed basenames.
+
+// Define the maximum number of directories that can be specified in
+// the FLOX_SANDBOX_ALLOW_DIRS environment variable. This is a somewhat
+// arbitrary limit, but it should be more than enough for most cases.
+#define FLOX_SANDBOX_ALLOW_DIRS_MAXENTRIES 256
+
+// Define the maximum length of a directory path in the FLOX_SANDBOX_ALLOW_DIRS
+// environment variable. This is also somewhat arbitrary, but it should
+// be more than enough for most cases.
+#define FLOX_SANDBOX_ALLOW_DIRS_MAXLEN PATH_MAX
+
+static int    allow_dirs_count = -1;
+static char   allow_dirs_buf[FLOX_SANDBOX_ALLOW_DIRS_MAXLEN];
+static char * allow_dirs[FLOX_SANDBOX_ALLOW_DIRS_MAXENTRIES];
 bool check_allowed_basenames( const char * pathname ) {
-    if ( strncmp(pathname, "/tmp/", 5) == 0 ) {
-        debug( "%s is an allowed basename", "/tmp/");
-        return true;
+  // Start by reading the contents of FLOX_ALLOW_SANDBOX_DIRS into array
+  if ( allow_dirs_count == -1 )
+    {
+      // Copy the contents of the FLOX_SANDBOX_ALLOW_DIRS variable into
+      // allow_dirs_buf and tokenize the buffer by replacing
+      // colons with NULLs as we count the entries, saving pointers
+      // to each of the paths in the allow_dirs[] array.
+      allow_dirs_count = 0;
+      const char * allow_dirs_env
+        = getenv( "FLOX_SANDBOX_ALLOW_DIRS" );
+      if ( allow_dirs_env != NULL )
+        {
+          if ( sizeof( allow_dirs_env )
+               >= FLOX_SANDBOX_ALLOW_DIRS_MAXLEN )
+            {
+              _error( "check_allowed_basenames() FLOX_SANDBOX_ALLOW_DIRS is too long, "
+                     "truncating to %d characters\n",
+                     FLOX_SANDBOX_ALLOW_DIRS_MAXLEN );
+            }
+
+          strncpy( allow_dirs_buf,
+                   allow_dirs_env,
+                   sizeof( allow_dirs_buf ) );
+
+
+          // Iterate over the space-separated list of paths in the
+          // allow_dirs buffer, tokenizing as we go and
+          // maintaining a count of the number of entries found.
+          char * allow_dir = NULL;
+          char * saveptr                = NULL;  // For strtok_r() context
+
+          allow_dir
+            = strtok_r( allow_dirs_buf, " ", &saveptr );
+          while ( allow_dir != NULL )
+            {
+              if ( allow_dirs_count
+                   >= FLOX_SANDBOX_ALLOW_DIRS_MAXENTRIES )
+                {
+                  _error( "la_objsearch() "
+                          "FLOX_SANDBOX_ALLOW_DIRS has too many entries, "
+                          "truncating to the first %d",
+                          FLOX_SANDBOX_ALLOW_DIRS_MAXENTRIES );
+                  break;
+                }
+              debug( "la_objsearch() allow_dirs[%d] = %s",
+                      allow_dirs_count,
+                      allow_dir );
+              allow_dirs[allow_dirs_count]
+                = allow_dir;
+              allow_dir = strtok_r( NULL, " ", &saveptr );
+              allow_dirs_count++;
+            }
+        }
+
+      // Add a few static entries to the end of the list.
+      allow_dirs[allow_dirs_count++] = "/tmp";
+      allow_dirs[allow_dirs_count++] = "/dev";
+      allow_dirs[allow_dirs_count++] = "/sys";
+      allow_dirs[allow_dirs_count++] = "/proc";
+
+      const char *flox_src_dir = getenv("FLOX_SRC_DIR");
+      if (flox_src_dir) allow_dirs[allow_dirs_count++] = flox_src_dir;
     }
-    if ( strncmp(pathname, "/dev/", 5) == 0 ) {
-        debug( "%s is an allowed basename", "/dev/");
-        return true;
-    }
-    if ( strncmp(pathname, "/sys/", 5) == 0 ) {
-        debug( "%s is an allowed basename", "/sys/");
-        return true;
-    }
-    if ( strncmp(pathname, "/proc/", 6) == 0 ) {
-        debug( "%s is an allowed basename", "/proc/");
-        return true;
-    }
-    // TODO: evaluate FLOX_SRC_DIR just once
-    const char *flox_src_dir = getenv("FLOX_SRC_DIR");
-    if (flox_src_dir) {
-	if ( strncmp(pathname, flox_src_dir, strlen(flox_src_dir)) == 0 &&
-	  ( pathname[strlen(flox_src_dir)] == '/' || pathname[strlen(flox_src_dir)] == '\0' )
+
+  // Iterate over the allow_dirs list looking for pathname.
+  static int i;
+  for ( i = 0; i < allow_dirs_count; i++ )
+    {
+	if ( strncmp(pathname, allow_dirs[i], strlen(allow_dirs[i])) == 0 &&
+	  ( pathname[strlen(allow_dirs[i])] == '/' || pathname[strlen(allow_dirs[i])] == '\0' )
 	) {
             debug( "%s is an allowed basename", pathname );
 	    return true;
 	}
     }
+
     debug( "%s is not an allowed basename", pathname );
     return false;
 }
 
-// Some absolute paths like "." are always permitted.
-bool check_allowed_abspaths( const char * pathname ) {
-    if (
-        strncmp(pathname, ".", 1) == 0
-    ) {
-        debug( "%s is an allowed abspath", pathname );
-        return true;
-    } else {
-        debug( "%s is not an allowed abspath", pathname );
-        return false;
-    }
-}
-
 // Forward declaration of sandbox_check_path().
 bool sandbox_check_path( const char * pathname );
-
-// Calculate the realpath of the path, and if it's different from
-// the original then start over, otherwise return false.
-bool recheck_realpath( const char * pathname ) {
-    static char real_path[PATH_MAX];
-    if (realpath( pathname, real_path ) == NULL) return false;
-    if (strcmp(pathname, real_path) == 0) return false;
-    return sandbox_check_path( real_path );
-}
 
 // Check if path access represents something that may not be reproducible
 // on another machine. Any path within the environment's closure is fine,
@@ -204,14 +246,17 @@ bool recheck_realpath( const char * pathname ) {
 // references to it in code, so when invoking this path we suspend all
 // further path checking until argv0 is updated to a new path.
 bool sandbox_check_path( const char * pathname ) {
+    static char real_path[PATH_MAX];
     if (sandbox_level < 0) load_original_functions();
     if (sandbox_level == 0) return true;
     debug( "sandbox_check_path(%s), sandbox_level=%d", pathname, sandbox_level );
-    if (in_closure(pathname)) return true;
     if (sandbox_check_argv0()) return true;
-    if (check_allowed_basenames(pathname)) return true;
-    if (check_allowed_abspaths(pathname)) return true;
-    if (recheck_realpath(pathname)) return true;
+
+    // From here on out, operate on realpath. If a file doesn't exist
+    // then return true and let ENOENT be the eventual result.
+    if (realpath( pathname, real_path ) == NULL) return true;
+    if (check_allowed_basenames(real_path)) return true;
+    if (in_closure(real_path)) return true;
     if (sandbox_level == 1) {
         warn( "%s is not in the sandbox", pathname );
         return true;

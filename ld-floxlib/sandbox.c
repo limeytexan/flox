@@ -15,6 +15,7 @@
  */
 
 #define _GNU_SOURCE
+#include <pthread.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -37,6 +38,9 @@
 
 // Derive audit level from FLOX_VIRTUAL_SANDBOX environment variable.
 int    sandbox_level = -1;
+
+// Thread lock
+pthread_mutex_t lock;
 
 // Function pointers to hold the original functions
 #ifdef Linux
@@ -183,7 +187,7 @@ bool check_allowed_basenames( const char * pathname ) {
           // allow_dirs buffer, tokenizing as we go and
           // maintaining a count of the number of entries found.
           char * allow_dir = NULL;
-          char * saveptr                = NULL;  // For strtok_r() context
+          char * saveptr   = NULL;  // For strtok_r() context
 
           allow_dir
             = strtok_r( allow_dirs_buf, " ", &saveptr );
@@ -228,9 +232,10 @@ bool check_allowed_basenames( const char * pathname ) {
     }
 
   // Iterate over the allow_dirs list looking for pathname.
-  static int i;
-  static char allow_dir_real_path[PATH_MAX];
-  for ( i = 0; i < allow_dirs_count; i++ )
+  char allow_dir_real_path[PATH_MAX];
+  pthread_mutex_lock(&lock);
+  static bool allowed = false;
+  for ( int i = 0; i < allow_dirs_count; i++ )
     {
         // Recall we've been passed a realpath, so we must in turn
 	// convert our allow dirs to realpaths as well. TODO: find
@@ -240,16 +245,18 @@ bool check_allowed_basenames( const char * pathname ) {
         if (realpath( allow_dirs[i], allow_dir_real_path ) == NULL) {
             debug( "check_allowed_basenames(): skipping path '%s', does not exist", allow_dir_real_path );
 	} else {
-            // debug( "check_allowed_basenames('%s'): i=%d, comparing to '%s'", pathname, i, allow_dir_real_path );
+            debug( "check_allowed_basenames('%s'): i=%d, comparing to '%s'", pathname, i, allow_dir_real_path );
 //            if ( strncmp(pathname, allow_dir_real_path, strlen(allow_dir_real_path)) == 0 &&
 //              ( pathname[strlen(allow_dir_real_path)] == '/' || pathname[strlen(allow_dir_real_path)] == '\0' )
             if ( strncmp(pathname, allow_dir_real_path, strlen(allow_dir_real_path)) == 0 ) {
                 debug( "%s is an allowed basename", pathname );
-                return true;
+                allowed = true;
+		break;
             }
 	}
     }
-  return false;
+  pthread_mutex_unlock(&lock);
+  return allowed;
 }
 
 // Check if path access represents something that may not be reproducible
@@ -274,7 +281,10 @@ bool sandbox_check_path( const char * pathname ) {
     // then return true and let ENOENT be the eventual result.
     if (realpath( pathname, real_path ) == NULL) return true;
     if (check_allowed_basenames(real_path)) return true;
-    if (in_closure(real_path)) return true;
+    if (in_closure(real_path)) {
+        debug( "%s is in the closure", pathname );
+        return true;
+    }
     if (sandbox_level == 1) {
         warn( "%s is not in the sandbox", pathname );
         return true;

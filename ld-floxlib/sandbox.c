@@ -39,10 +39,6 @@ int    sandbox_level = -1;
 // Function pointers to hold the original functions
 static int (*orig_open)(const char *pathname, int flags, ...) = NULL;
 static int (*orig_openat)(int dirfd, const char *pathname, int flags, ...) = NULL;
-// static int (*orig_stat)(const char *pathname, struct stat *statbuf) = NULL;
-// static int (*orig_lstat)(const char *pathname, struct stat *statbuf) = NULL;
-// static int (*orig_fstat)(int fd, struct stat *statbuf) = NULL;
-// static int (*orig_newfstatat)(int dirfd, const char *pathname, struct stat *statbuf, int flags) = NULL;
 
 // Helper macros for printing debug, warnings, errors.
 static int    debug_sandbox = -1;
@@ -87,10 +83,6 @@ void load_original_functions() {
     // functions below.
     orig_open = dlsym(RTLD_NEXT, "open");
     orig_openat = dlsym(RTLD_NEXT, "openat");
-    // orig_stat = dlsym(RTLD_NEXT, "stat");
-    // orig_lstat = dlsym(RTLD_NEXT, "lstat");
-    // orig_fstat = dlsym(RTLD_NEXT, "fstat");
-    // orig_newfstatat = dlsym(RTLD_NEXT, "newfstatat");
 }
 
 // Accessor method for determining sandbox_level defined as a
@@ -303,50 +295,3 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
         return -1;
     }
 }
-
-/*
-
-// Interceptor for stat
-int stat(const char *pathname, struct stat *statbuf) {
-    if (!orig_stat) load_original_functions();
-    debug("stat(%s)", pathname);
-    if (sandbox_check_path(pathname)) {
-        return orig_stat(pathname, statbuf);
-    } else {
-        errno = EACCES;
-        return -1;
-    }
-}
-
-// Interceptor for lstat
-int lstat(const char *pathname, struct stat *statbuf) {
-    if (!orig_lstat) load_original_functions();
-    debug("lstat(%s)", pathname);
-    if (sandbox_check_path(pathname)) {
-        return orig_lstat(pathname, statbuf);
-    } else {
-        errno = EACCES;
-        return -1;
-    }
-}
-
-// Interceptor for fstat
-int fstat(int fd, struct stat *statbuf) {
-    if (!orig_fstat) load_original_functions();
-    debug("fstat(%d)", fd);
-    return orig_fstat(fd, statbuf);
-}
-
-// Interceptor for newfstatat
-int newfstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags) {
-    if (!orig_newfstatat) load_original_functions();
-    debug("newfstatat(%s)", pathname);
-    if (sandbox_check_path(pathname)) {
-        return orig_newfstatat(dirfd, pathname, statbuf, flags);
-    } else {
-        errno = EACCES;
-        return -1;
-    }
-}
-
-*/

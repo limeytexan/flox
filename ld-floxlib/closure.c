@@ -24,7 +24,9 @@
 #include <stdbool.h>
 
 // Declare version bindings to work with minimum supported GLIBC versions.
-#include "glibc-bindings.h"
+#ifdef linux
+  #include "glibc-bindings.h"
+#endif
 
 #define HASH_MULTIPLIER 31
 #define INITIAL_CAPACITY FLOX_ENV_CLOSURE_MAXENTRIES

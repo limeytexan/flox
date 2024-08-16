@@ -192,9 +192,12 @@ in
           substituteInPlace $out/libexec/flox-build.mk \
             --replace "__FLOX_CLI_OUTPATH__" "$out"
           mkdir -p $out/lib
-          cp ${ld-floxlib}/lib/libsandbox.so $out/lib
-          ln -s ${ld-floxlib}/lib/libsandbox.so $out/lib
-          ln -s ${ld-floxlib}/lib/ld-floxlib.so $out/lib
+          ${if hostPlatform.isLinux then ''
+            ln -s ${ld-floxlib}/lib/ld-floxlib.so $out/lib
+            ln -s ${ld-floxlib}/lib/libsandbox.so $out/lib
+	  '' else ''
+            ln -s ${ld-floxlib}/lib/libsandbox.dylib $out/lib
+	  ''}
         '';
 
       doInstallCheck = false;

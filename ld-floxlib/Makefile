@@ -3,11 +3,15 @@ GREENCHECK = ✅
 REDCROSS = ❌
 OS := $(shell uname -s)
 
-INSTALL = libsandbox.so
-TESTS = sandbox-tests
+.DEFAULT_GOAL := all
+
 ifeq (Linux,$(OS))
-  INSTALL += ld-floxlib.so
-  TESTS += ld-audit-tests
+  ALL = libsandbox.so ld-floxlib.so
+  TESTS = sandbox-tests ld-audit-tests
+  IS_LINUX := true
+else
+  ALL = libsandbox.dylib
+  TESTS = sandbox-tests
 endif
 
 # Define LD_FLOXLIB with macro to allow testing builds from other hosts.
@@ -15,10 +19,10 @@ LD_FLOXLIB ?= $(abspath ld-floxlib.so)
 
 ld-floxlib.so: ld-floxlib.c
 	$(CC) -shared -fPIC $< -o $@
-	# The ld-floxlib.so library only requires libc, which is guaranteed
-	# to either be already loaded or available by way of a default provided
-	# by the linker itself, so to avoid loading a different libc than the
-	# one already loaded we remove RPATH/RUNPATH from the shared library.
+	@# The ld-floxlib.so library only requires libc, which is guaranteed
+	@# to either be already loaded or available by way of a default provided
+	@# by the linker itself, so to avoid loading a different libc than the
+	@# one already loaded we remove RPATH/RUNPATH from the shared library.
 	patchelf --remove-rpath $@
 
 closure.o: closure.c closure.h
@@ -26,14 +30,16 @@ closure.o: closure.c closure.h
 
 libsandbox.so: sandbox.c closure.o
 	$(CC) -shared -fPIC $^ -o $@
-	# The libsandbox.so library only requires libc, which is guaranteed
-	# to either be already loaded or available by way of a default provided
-	# by the linker itself, so to avoid loading a different libc than the
-	# one already loaded we remove RPATH/RUNPATH from the shared library.
 	patchelf --remove-rpath $@
 
+libsandbox.dylib: sandbox.c closure.o
+	$(CC) -dynamiclib $^ -o $@
+
+.PHONY: all
+all: $(ALL)
+
 .PHONY: install
-install: $(INSTALL)
+install: $(ALL)
 	mkdir -p $(PREFIX)/lib
 	cp $^ $(PREFIX)/lib
 

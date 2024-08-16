@@ -19,6 +19,9 @@ ifeq (,$(FLOX_ENV))
   $(error ERROR: FLOX_ENV not defined)
 endif
 
+# Identify target O/S.
+OS := $(shell uname -s)
+
 # Set the default goal to be all builds if one is not specified.
 .DEFAULT_GOAL := all
 
@@ -81,12 +84,24 @@ $(foreach build,$(BUILDS),$(eval $(call DEPENDS_template)))
 # Define macro containing single space character for use in string substitution.
 space := $(subst x,,x x)
 
+# The method of calling the sandbox differs based on O/S. Define
+# PRELOAD_ARGS to denote the correct way.
+ifeq (Darwin,$(OS))
+  PRELOAD_ARGS = DYLD_INSERT_LIBRARIES=__FLOX_CLI_OUTPATH__/lib/libsandbox.dylib
+else
+  ifeq (Linux,$(OS))
+    PRELOAD_ARGS = LD_PRELOAD=__FLOX_CLI_OUTPATH__/lib/libsandbox.so
+  else
+    $(error unknown OS: $(OS))
+  endif
+endif
+
 # The following template renders targets for the in-situ build mode.
 define BUILD_local_template =
   .INTERMEDIATE: $(_pname)_local_build
   $(_pname)_local_build: $($(_pvarname)_buildScript)
 	@echo "Building $(_name) in local mode"
-	$(if $(_virtualSandbox),LD_PRELOAD=__FLOX_CLI_OUTPATH__/lib/libsandbox.so FLOX_SRC_DIR=$$$$(pwd) FLOX_VIRTUAL_SANDBOX=$(strip $(_virtualSandbox))) \
+	$(if $(_virtualSandbox),$(PRELOAD_ARGS) FLOX_SRC_DIR=$$$$(pwd) FLOX_VIRTUAL_SANDBOX=$(strip $(_virtualSandbox))) \
 	MAKEFLAGS= FLOX_TURBO=1 out=$(_out) $(FLOX_ENV)/activate bash -e $($(_pvarname)_buildScript)
 	nix --extra-experimental-features nix-command \
 	  build -L --file __FLOX_CLI_OUTPATH__/libexec/build-manifest.nix \

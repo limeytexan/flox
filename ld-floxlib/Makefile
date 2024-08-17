@@ -33,7 +33,7 @@ libsandbox.so: sandbox.c closure.o
 	patchelf --remove-rpath $@
 
 libsandbox.dylib: sandbox.c closure.o
-	$(CC) -dynamiclib $^ -o $@
+	$(CC) -pthread -dynamiclib $^ -o $@
 
 .PHONY: all
 all: $(ALL)

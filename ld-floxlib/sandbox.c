@@ -234,7 +234,11 @@ bool check_allowed_basenames( const char * pathname ) {
   // Iterate over the allow_dirs list looking for pathname.
   char allow_dir_real_path[PATH_MAX];
   pthread_mutex_lock(&lock);
-  static bool allowed = false;
+  bool allowed = false;
+
+  uint64_t tid;
+  pthread_threadid_np(NULL, &tid);
+
   for ( int i = 0; i < allow_dirs_count; i++ )
     {
         // Recall we've been passed a realpath, so we must in turn
@@ -245,7 +249,7 @@ bool check_allowed_basenames( const char * pathname ) {
         if (realpath( allow_dirs[i], allow_dir_real_path ) == NULL) {
             debug( "check_allowed_basenames(): skipping path '%s', does not exist", allow_dir_real_path );
 	} else {
-            debug( "check_allowed_basenames('%s'): i=%d, comparing to '%s'", pathname, i, allow_dir_real_path );
+            debug( "check_allowed_basenames('%s'): tid=%d, i=%d, comparing to '%s'", pathname, tid, i, allow_dir_real_path );
 //            if ( strncmp(pathname, allow_dir_real_path, strlen(allow_dir_real_path)) == 0 &&
 //              ( pathname[strlen(allow_dir_real_path)] == '/' || pathname[strlen(allow_dir_real_path)] == '\0' )
             if ( strncmp(pathname, allow_dir_real_path, strlen(allow_dir_real_path)) == 0 ) {

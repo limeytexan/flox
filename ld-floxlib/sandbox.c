@@ -112,6 +112,7 @@ bool sandbox_check_argv0() {
     if (realpath( "/proc/self/exe", argv0_path ) == NULL)
       {
         _error( "sandbox_check_argv0() realpath() failed" );
+        fflush(stderr);
         // If realpath() failed to set the realpath then explicitly
         // ensure our buffer returns an empty string.
         argv0_path[0] = '\0';
@@ -159,6 +160,7 @@ static char   allow_dirs_buf[FLOX_SANDBOX_ALLOW_DIRS_MAXLEN];
 static char * allow_dirs[FLOX_SANDBOX_ALLOW_DIRS_MAXENTRIES];
 bool check_allowed_basenames( const char * pathname ) {
   // Start by reading the contents of FLOX_ALLOW_SANDBOX_DIRS into array
+  pthread_mutex_lock(&lock);
   if ( allow_dirs_count == -1 )
     {
       // Copy the contents of the FLOX_SANDBOX_ALLOW_DIRS variable into
@@ -176,6 +178,7 @@ bool check_allowed_basenames( const char * pathname ) {
               _error( "check_allowed_basenames() FLOX_SANDBOX_ALLOW_DIRS is too long, "
                      "truncating to %d characters\n",
                      FLOX_SANDBOX_ALLOW_DIRS_MAXLEN );
+              fflush(stderr);
             }
 
           strncpy( allow_dirs_buf,
@@ -200,6 +203,7 @@ bool check_allowed_basenames( const char * pathname ) {
                           "FLOX_SANDBOX_ALLOW_DIRS has too many entries, "
                           "truncating to the first %d",
                           FLOX_SANDBOX_ALLOW_DIRS_MAXENTRIES );
+                  fflush(stderr);
                   break;
                 }
               debug( "check_allowed_basenames() allow_dirs[%d] = %s",
@@ -233,7 +237,6 @@ bool check_allowed_basenames( const char * pathname ) {
 
   // Iterate over the allow_dirs list looking for pathname.
   char allow_dir_real_path[PATH_MAX];
-  pthread_mutex_lock(&lock);
   bool allowed = false;
 
   uint64_t tid;
@@ -242,22 +245,22 @@ bool check_allowed_basenames( const char * pathname ) {
   for ( int i = 0; i < allow_dirs_count; i++ )
     {
         // Recall we've been passed a realpath, so we must in turn
-	// convert our allow dirs to realpaths as well. TODO: find
-	// a way to do this as we populate allow_dirs; we don't do
-	// this now because we're indexing the same memory returned
-	// by getenv().
+        // convert our allow dirs to realpaths as well. TODO: find
+        // a way to do this as we populate allow_dirs; we don't do
+        // this now because we're indexing the same memory returned
+        // by getenv().
         if (realpath( allow_dirs[i], allow_dir_real_path ) == NULL) {
             debug( "check_allowed_basenames(): skipping path '%s', does not exist", allow_dir_real_path );
-	} else {
+        } else {
             debug( "check_allowed_basenames('%s'): tid=%d, i=%d, comparing to '%s'", pathname, tid, i, allow_dir_real_path );
 //            if ( strncmp(pathname, allow_dir_real_path, strlen(allow_dir_real_path)) == 0 &&
 //              ( pathname[strlen(allow_dir_real_path)] == '/' || pathname[strlen(allow_dir_real_path)] == '\0' )
             if ( strncmp(pathname, allow_dir_real_path, strlen(allow_dir_real_path)) == 0 ) {
                 debug( "%s is an allowed basename", pathname );
                 allowed = true;
-		break;
+                break;
             }
-	}
+        }
     }
   pthread_mutex_unlock(&lock);
   return allowed;
@@ -294,7 +297,10 @@ bool sandbox_check_path( const char * pathname ) {
         return true;
     } else {
         _error( "%s is not in the sandbox", pathname );
-        return false;
+        fflush(stderr);
+        // XXX Do we exit hard or rely on EACCESS?
+        exit(1);
+        // return false;
     }
 }
 

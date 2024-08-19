@@ -30,7 +30,8 @@ let
 in
   pkgs.runCommand name {
     inherit buildInputs srcTarball;
-    nativeBuildInputs = with pkgs; [findutils gnutar gnused makeWrapper];
+    nativeBuildInputs = with pkgs; [findutils gnutar gnused makeWrapper]
+      ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ darwin.autoSignDarwinBinariesHook ];
     outputs = [ "out" ] ++ pkgs.lib.optionals ( buildCache != null ) [ "buildCache" ];
   } ( (
       if (buildScript == null)
@@ -51,6 +52,9 @@ in
           echo "ERROR: build did not produce expected \$out (${install-prefix})" 1>&2
           exit 1
         fi
+        ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+          signDarwinBinariesInAllOutputs
+        ''}
       ''
       else ''
         # If the build script is provided, then it's expected that we will

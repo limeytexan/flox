@@ -125,12 +125,12 @@ define BUILD_sandbox_template =
   # The sourceTarball value needs to be stable when nothing changes across builds,
   # so we create a tarball at a stable TMPDIR path and pass that to the derivation
   # instead.
-  $(eval $(_pvarname)_src_tgz = $($(_pvarname)_tmpBasename)-src.tgz)
-  $($(_pvarname)_src_tgz): FORCE
-	tar -czf - --no-recursion -T <(git ls-files) > $$@
+  $(eval $(_pvarname)_src_tar = $($(_pvarname)_tmpBasename)-src.tar)
+  $($(_pvarname)_src_tar): FORCE
+	tar -cf - --no-recursion -T <(git ls-files) > $$@
 
   # The buildCache value needs to be similarly stable when nothing changes across
-  $(eval $(_pvarname)_buildCache = $($(_pvarname)_tmpBasename)-buildCache.tgz)
+  $(eval $(_pvarname)_buildCache = $($(_pvarname)_tmpBasename)-buildCache.tar)
   $($(_pvarname)_buildCache): FORCE
 	-rm -f $$@
 	@# If a previous buildCache exists, then copy, don't link to the
@@ -145,12 +145,12 @@ define BUILD_sandbox_template =
 	else \
 	  tmpdir=$$$$(mktemp -d); \
 	  echo "Build cache initialized on $$$$(date)" > $$$$tmpdir/.buildCache.init; \
-	  tar -czf $$@ -C $$$$tmpdir .buildCache.init; \
+	  tar -cf $$@ -C $$$$tmpdir .buildCache.init; \
 	  rm -rf $$$$tmpdir; \
 	fi
 
   .PHONY: $(_pname)_sandbox_build
-  $(_pname)_sandbox_build: $($(_pvarname)_buildScript) $($(_pvarname)_src_tgz) \
+  $(_pname)_sandbox_build: $($(_pvarname)_buildScript) $($(_pvarname)_src_tar) \
 		$(if $(_do_buildCache),$($(_pvarname)_buildCache))
 	@echo "Building $(_name) in sandbox mode"
 	@# If a previous buildCache exists then move it out of the way
@@ -162,7 +162,7 @@ define BUILD_sandbox_template =
 	nix --extra-experimental-features nix-command \
 	  build -L --file __FLOX_CLI_OUTPATH__/libexec/build-manifest.nix \
 	    --argstr name "$(_name)" \
-	    --argstr srcTarball "$($(_pvarname)_src_tgz)" \
+	    --argstr srcTarball "$($(_pvarname)_src_tar)" \
 	    --argstr flox-env "$(FLOX_ENV)" \
 	    --argstr install-prefix "$(_out)" \
 	    $(if $($(_pvarname)_buildDeps),--arg buildDeps $($(_pvarname)_buildDeps_arg)) \
@@ -239,7 +239,7 @@ define BUILD_template =
   $(call BUILD_$(_build_mode)_template)
 
   # Select the desired build mode as we declare the result symlink target.
-  $(_result): $(_pname)_$(_build_mode)
+  $(_result): $(_pname)_$(_build_mode)_build
 	@# Take this opportunity to fail the build if we spot fatal errors in the log.
 	@if grep -q "flox build failed (caching build dir)" $($(_pvarname)_logfile); then \
 	  echo "ERROR: flox build failed (see $($(_pvarname)_logfile))" 1>&2; \
@@ -249,10 +249,11 @@ define BUILD_template =
 
   # Create a helper target for referring to the package by its name rather
   # than the [real] result symlink we're looking to create.
+  .PHONY: $(_pname)
   $(_pname): $(_result)
 
   # Accumulate a list of known build targets for the "all" target.
-  all += $(_pname)
+  all += $(_result)
 endef
 
 # It is expected that the sandbox and caching modes will be specified on a
@@ -267,6 +268,7 @@ $(foreach build,$(BUILDS), \
     $(eval $(call BUILD_template,local))))
 
 # Finally, we create the "all" target to build all known packages.
+.PHONY: all
 all: $(all)
 
 .PHONY: FORCE

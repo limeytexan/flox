@@ -195,9 +195,18 @@ in
           ${if hostPlatform.isLinux then ''
             ln -s ${ld-floxlib}/lib/ld-floxlib.so $out/lib
             ln -s ${ld-floxlib}/lib/libsandbox.so $out/lib
-	  '' else ''
+          '' else ''
             ln -s ${ld-floxlib}/lib/libsandbox.dylib $out/lib
 	  ''}
+          cp ${writers.writeBash "flox-build-graph" ''
+            # Update PATH for access to `dot` command.
+            export PATH=${graphviz}/bin:$PATH
+            export FONTCONFIG_FILE=${fontconfig.out}/etc/fonts/fonts.conf
+            __FLOX_CLI_OUTPATH__/bin/flox-build --print-data-base --just-print "$@" | \
+              ${makedot} --targets --png --rewrite FLOX_ENV --rewrite TMPDIR --nodraw FORCE -
+          ''} $out/bin/flox-build-graph
+          substituteInPlace $out/bin/flox-build-graph \
+            --replace "__FLOX_CLI_OUTPATH__" "$out"
         '';
 
       doInstallCheck = false;

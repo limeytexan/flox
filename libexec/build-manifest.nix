@@ -25,7 +25,7 @@ let
   ) ++ [flox-env-package];
   install-prefix-contents = /. + install-prefix;
   buildScript-contents = /. + buildScript;
-  buildCache-tgz-contents = if (buildCache == null) then null else (/. + buildCache);
+  buildCache-tar-contents = if (buildCache == null) then null else (/. + buildCache);
 
 in
   pkgs.runCommand name {
@@ -57,6 +57,15 @@ in
         ''}
       ''
       else ''
+        echo "---"
+        echo "Input checksums:"
+        md5sum \
+          ${/. + srcTarball} \
+          ${buildScript-contents} \
+          ${pkgs.lib.optionalString (
+            buildCache-tar-contents != null
+          ) buildCache-tar-contents}
+        echo "---"
         # If the build script is provided, then it's expected that we will
         # invoke it from within the sandbox to create $out. The choice of
         # pure or impure mode occurs outside of this script as the derivation
@@ -72,11 +81,12 @@ in
         # Passing the source as a directory would cause the timestamps to be
         # set to the UNIX epoch as happens with all files in the Nix store,
         # which would be older than the intermediate compilation artifacts.
-        tar -xzpf ${/. + srcTarball}
+        tar -xpf ${/. + srcTarball}
 
         # Extract contents of the cache, if it exists.
-        ${ if buildCache-tgz-contents == null then ":" else
-          "tar --skip-old-files -xpzf ${buildCache-tgz-contents}" }
+        ${ if buildCache-tar-contents == null then ":" else ''
+          tar --skip-old-files -xpf ${buildCache-tar-contents}
+        '' }
         ${ if buildCache == null then ''
           # When not preserving a cache we just run the build normally.
           FLOX_VIRTUAL_SANDBOX=${virtualSandbox} FLOX_SRC_DIR=$(pwd) \
@@ -119,6 +129,11 @@ in
     '' + pkgs.lib.optionalString (buildCache != null) ''
       # Only tar the files to avoid differences in directory {a,c,m}times.
       # Sort the files to keep the output stable across builds.
-      find . -type f | sort | tar -c -z --no-recursion -f $buildCache -T -
+      # Avoid compressing with gzip because that is not stable across
+      # invocations on Mac only. Experimentation shows that xz and bzip2
+      # compression is stable on both Mac and Linux, but that can be slow,
+      # and we probably don't actually need to compress the build cache
+      # because we actively delete the old copy as we create a new one.
+      find . -type f | sort | tar -c --no-recursion -f $buildCache -T -
     ''
   )

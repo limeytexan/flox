@@ -13,8 +13,8 @@ in
 lib.makeOverridable
 ({ name
 
-, # The path to the flox "interpreter" package.
-    interpreter
+, # The path to the flox "activation-scripts" package.
+  activation_scripts
 
 , # The manifest file (if any).  A symlink $out/manifest will be
   # created to it.
@@ -78,8 +78,8 @@ runCommand name
       priority = drv.meta.priority or 5;
     }) paths);
 
-    # The develop output adds a single package, the interpreter.
-    # I'm sure a Nix professional could make this more elegant
+    # The develop output adds a single package, activation-scripts.
+    # I'm sure a Nix lang expert could make this more elegant
     # by factoring out the paths assignment from above but this
     # works for a demo.
     developPkgs = builtins.toJSON ((map (drv: {
@@ -101,7 +101,7 @@ runCommand name
       priority = drv.meta.priority or 5;
     }) paths) ++ [
       {
-        paths = [interpreter];
+        paths = [activation_scripts];
         priority = 1;
       }
     ]);
@@ -113,11 +113,25 @@ runCommand name
   }
   ''
     ${buildPackages.perl}/bin/perl -w ${builder}
+
+    # Nix "*Path" environment variables are magic, automatically exported
+    # in the process of creating a derivation. That's how `pkgsPath` is
+    # created from the `pkgs` definition above, and `developPkgsPath` is
+    # similarly created from `developPkgs`.
+
+    # The `builder.pl` script expects to receive the list of packages by
+    # way of one of the `pkgsPath` or `pkgs` environment variables. Explicitly
+    # set these variables when building the "develop" output.
     if [ -n "$developPkgsPath" ]; then
       out=$develop pkgsPath=$developPkgsPath ${buildPackages.perl}/bin/perl -w ${builder}
     else
       out=$develop pkgs=$developPkgs ${buildPackages.perl}/bin/perl -w ${builder}
     fi
+
+    # TODO: iterate over other outputs as required for the manifest build outputs.
+    #       This part of that work is trivial; it's the Nix expressions above that
+    #       are difficult.
+
     ls -ld $out $develop
     eval "$postBuild"
   '')

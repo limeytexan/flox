@@ -9,24 +9,24 @@
 # Usage:
 #   buildenv \
 #     [ -n <name> ] \
-#     [ -i <interpreter> ] \
-#     <path/to/manifest.json>
+#     [ -a <activation-scripts-pkg> ] \
+#     <path/to/manifest.lock>
 
 set -e
 
 export PATH=@nix@/bin:"$PATH"
 
-OPTSTRING="n:t:"
+OPTSTRING="n:a:"
 
 declare name="floxenv"
-declare interpreter="@interpreter@"
+declare activation_scripts="@activation_scripts@"
 while getopts $OPTSTRING opt; do
   case $opt in
     n)
       name=$OPTARG
       ;;
-    i)
-      interpreter=$OPTARG
+    a)
+      activation_scripts=$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -42,20 +42,20 @@ done
 shift $((OPTIND-1))
 
 if [ $# -ne 1 ]; then
-  echo "Usage: $0 [-n <name>] [-i <interpreter>] <path/to/manifest.json>" >&2
+  echo "Usage: $0 [-n <name>] [-a <activation-scripts-pkg>] <path/to/manifest.lock>" >&2
   exit 1
 fi
 
-# Parse the manifest.json passed as ARGV[0]
+# Parse the manifest.lock passed as ARGV[0]
 declare rp
 rp="$(@coreutils@/bin/realpath "$1")"
 
 # Render any missing packages.
-source <(@jq@/bin/jq -r -f @out@/lib/build-packages.jq "$rp")
+source <(@jq@/bin/jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$rp")
 
-# TODO: let buildenv.nix parse the manifest.json directly
+# TODO: let buildenv.nix parse the manifest.lock directly
 declare -a storePathArgs
-storePathArgs="$(@jq@/bin/jq -r '.elements[].storePaths[] | "( storePath \(.) )"' "$rp")"
+storePathArgs="$(@jq@/bin/jq -r --arg system @system@ '.packages[] | select(.system == $system) | .outputs_to_install[] as $key | .outputs[$key] | "( storePath \(.) )"' "$rp")"
 
 { cat <<EOF
 with import <nixpkgs> {};
@@ -63,7 +63,7 @@ let buildFloxEnv =
   callPackage @out@/lib/buildenv.nix {};
 in buildFloxEnv {
   name = "$name";
-  interpreter = @interpreter@;
+  activation_scripts = @activation_scripts@;
   manifest = builtins.toPath "$rp";
   paths = with builtins; [ ${storePathArgs[@]} ];
 }

@@ -1,5 +1,6 @@
 {
   coreutils,
+  flox-activation-scripts,
   gnused,
   jq,
   procps,
@@ -19,42 +20,15 @@
   builder_pl = ./builder.pl;
   build_packages_jq = ./build-packages.jq;
 
-  # Extract the bash "activate" script from the rust source code.
-  # Blech, but hey it works for a demo.
-  activate_bash = runCommandLocal "activate" {} ''
-    cat > $out <<EOF
-    export _coreutils="@coreutils@"
-    export _gnused="@gnused@"
-    export _procps="@procps@"
-    EOF
-    awk 'BEGIN {p=0} /^\)_";/ {exit} (p) {print} /const ACTIVATE_SCRIPT = R"_\(/ {p=1}' \
-      ${../../pkgdb/src/buildenv/realise.cc} >> $out
-  '';
-
   # Wrap the script with a shebang.
-  activate = writers.writeBash "activate" activate_bash;
+#  activate = writers.writeBash "activate" "${flox-activation-scripts}/activate";
 
-  # Construct the flox "interpreter" package containing all files required
-  # for activating a flox environment. This won't be nearly so complicated
-  # once we refactor the repository to put these all in a single directory.
-  interpreter =
-    runCommandLocal "interpreter" {
-      inherit coreutils gnused procps;
-    } ''
-      mkdir -p $out/bin
-      cp ${activate} $out/bin/activate
-      substituteAllInPlace "$out/bin/activate"
-      cp -r ${../../pkgdb/src/buildenv/assets/etc} $out/etc
-      chmod -R +w $out/etc
-      rm -f $out/etc/profile.d/.gitignore
-      mkdir -p $out/etc/activate.d
-      cp -r ${../../pkgdb/src/buildenv/assets/activate.d}/* $out/etc/activate.d
-    '';
 in
   runCommandLocal
   "${pname}-${version}"
   {
-    inherit coreutils interpreter jq nix pname version;
+    inherit coreutils jq nix pname version;
+    activation_scripts = flox-activation-scripts;
   }
   ''
     mkdir -p "$out/bin" "$out/lib"

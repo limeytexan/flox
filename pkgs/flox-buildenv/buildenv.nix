@@ -1,20 +1,21 @@
 # buildEnv creates a tree of symlinks to the specified paths.  This is
 # a fork of the hardcoded buildEnv in the Nix distribution.
 
-{ buildPackages, runCommand, lib, substituteAll }:
+{ buildPackages, runCommand, lib, substituteAll, targetPlatform }:
 
 let
   builder = substituteAll {
     src = ./builder.pl;
     inherit (builtins) storeDir;
   };
+  build_closures_jq = ./build-closures.jq;
 in
 
 lib.makeOverridable
 ({ name
 
 , # The path to the flox "activation-scripts" package.
-  activation_scripts
+  activationScripts
 
 , # The manifest file (if any).  A symlink $out/manifest will be
   # created to it.
@@ -53,14 +54,23 @@ lib.makeOverridable
 , meta ? {}
 }:
 
+let
+    # Unlike the nixpkgs buildEnv, the Flox one has multiple outputs,
+    # the usual builtins.buildenv() output, a "develop" output, and
+    # a runtime closure for each of the manifest builds.
+    manifestBuilds = if manifest == "" then [] else (
+      let _manifest = builtins.fromJSON (builtins.readFile manifest);
+      in builtins.attrNames _manifest.manifest.build
+    );
+
+in
 runCommand name
   rec {
     inherit manifest ignoreCollisions checkCollisionContents passthru
             meta pathsToLink extraPrefix postBuild
             nativeBuildInputs buildInputs;
 
-    # Unlike the nixpkgs buildEnv, the Flox one has two outputs.
-    outputs = ["out" "develop"];
+    outputs = ["out" "develop"] ++ manifestBuilds;
 
     pkgs = builtins.toJSON (map (drv: {
       paths =
@@ -101,37 +111,49 @@ runCommand name
       priority = drv.meta.priority or 5;
     }) paths) ++ [
       {
-        paths = [activation_scripts];
+        paths = [activationScripts];
         priority = 1;
       }
     ]);
 
     preferLocalBuild = true;
     allowSubstitutes = false;
-    # XXX: The size is somewhat arbitrary
-    passAsFile = if builtins.stringLength pkgs >= 128*1024 then [ "pkgs" "developPkgs" ] else [ ];
+
+    # Nix "*Path" environment variables are automatically created by
+    # way of the derivation `passAsFile` attribute as described in:
+    #
+    # https://nix.dev/manual/nix/2.18/language/advanced-attributes#adv-attr-passAsFile
+    #
+    # The following causes `pkgsPath` and `developPkgsPath` to be set.
+    passAsFile = [ "pkgs" "developPkgs" ];
   }
   ''
     ${buildPackages.perl}/bin/perl -w ${builder}
-
-    # Nix "*Path" environment variables are magic, automatically exported
-    # in the process of creating a derivation. That's how `pkgsPath` is
-    # created from the `pkgs` definition above, and `developPkgsPath` is
-    # similarly created from `developPkgs`.
 
     # The `builder.pl` script expects to receive the list of packages by
     # way of one of the `pkgsPath` or `pkgs` environment variables. Explicitly
     # set these variables when building the "develop" output.
     if [ -n "$developPkgsPath" ]; then
-      out=$develop pkgsPath=$developPkgsPath ${buildPackages.perl}/bin/perl -w ${builder}
+      out=$develop pkgsPath=$developPkgsPath FLOX_RECURSIVE_LINK=1 \
+        ${buildPackages.perl}/bin/perl -w ${builder}
     else
-      out=$develop pkgs=$developPkgs ${buildPackages.perl}/bin/perl -w ${builder}
+      out=$develop pkgs=$developPkgs FLOX_RECURSIVE_LINK=1 \
+        ${buildPackages.perl}/bin/perl -w ${builder}
     fi
 
-    # TODO: iterate over other outputs as required for the manifest build outputs.
-    #       This part of that work is trivial; it's the Nix expressions above that
-    #       are difficult.
+    # Iterate over manifest builds creating closures for each build as
+    # specified in the manifest.
+    for build in ${builtins.toString manifestBuilds}; do
+      tmppkgs=$(mktemp)
+      ${buildPackages.jq}/bin/jq -c -r -f ${build_closures_jq} \
+        --arg activationScripts ${activationScripts} \
+        --arg build $build \
+	--arg system ${targetPlatform.system} \
+	${manifest} > $tmppkgs
+      out=''${!build} pkgsPath=$tmppkgs FLOX_RECURSIVE_LINK=1 \
+        ${buildPackages.perl}/bin/perl -w ${builder}
+      rm $tmppkgs
+    done
 
-    ls -ld $out $develop
     eval "$postBuild"
   '')

@@ -216,7 +216,7 @@ sub addPkg {
     # to rely upon walking setup hooks for constructing a long PYTHONPATH
     # during a potentially-unbounded instantiation.
     #
-    if ($out =~ /\-develop$/) {
+    if (exists $ENV{'FLOX_RECURSIVE_LINK'} and $ENV{'FLOX_RECURSIVE_LINK'} eq '1') {
         foreach my $propagatedFN (
             "$pkgDir/nix-support/propagated-user-env-packages", "$pkgDir/nix-support/propagated-build-inputs"
         ) {

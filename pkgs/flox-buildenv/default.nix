@@ -19,6 +19,7 @@
   buildenv_nix = ./buildenv.nix;
   builder_pl = ./builder.pl;
   build_packages_jq = ./build-packages.jq;
+  build_closures_jq = ./build-closures.jq;
 
   # Wrap the script with a shebang.
 #  activate = writers.writeBash "activate" "${flox-activation-scripts}/activate";
@@ -28,7 +29,7 @@ in
   "${pname}-${version}"
   {
     inherit coreutils jq nix pname version;
-    activation_scripts = flox-activation-scripts;
+    activationScripts = flox-activation-scripts;
   }
   ''
     mkdir -p "$out/bin" "$out/lib"
@@ -37,4 +38,5 @@ in
     cp ${buildenv_nix} "$out/lib/buildenv.nix"
     cp ${builder_pl} "$out/lib/builder.pl"
     cp ${build_packages_jq} "$out/lib/build-packages.jq"
+    cp ${build_closures_jq} "$out/lib/build-closures.jq"
   ''

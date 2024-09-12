@@ -19,14 +19,14 @@ export PATH=@nix@/bin:"$PATH"
 OPTSTRING="n:a:"
 
 declare name="floxenv"
-declare activation_scripts="@activation_scripts@"
+declare activationScripts="@activationScripts@"
 while getopts $OPTSTRING opt; do
   case $opt in
     n)
       name=$OPTARG
       ;;
     a)
-      activation_scripts=$OPTARG
+      activationScripts=$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -63,7 +63,7 @@ let buildFloxEnv =
   callPackage @out@/lib/buildenv.nix {};
 in buildFloxEnv {
   name = "$name";
-  activation_scripts = @activation_scripts@;
+  activationScripts = @activationScripts@;
   manifest = builtins.toPath "$rp";
   paths = with builtins; [ ${storePathArgs[@]} ];
 }

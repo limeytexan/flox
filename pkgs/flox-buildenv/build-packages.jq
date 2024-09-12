@@ -56,8 +56,8 @@ $manifest.packages | map(
   select(.system == $system) |
   .locked_url as $lockedUrl |
   .attr_path as $attrPath |
-  .outputs_to_install[] as $key |
-  .outputs[$key] as $storePath |
+  .outputs_to_install[] as $output |
+  .outputs[$output] as $storePath |
   "[ -e \($storePath) ] || " +
   "nix --extra-experimental-features 'flakes nix-command' build --no-out-link '\($lockedUrl)#\($attrPath)';"
 )[]

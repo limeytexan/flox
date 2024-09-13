@@ -1,0 +1,48 @@
+--- /Users/brantley/nixpkgs/./pkgs/build-support/buildenv/builder.pl	2024-01-24 15:53:52
++++ pkgs/flox-buildenv/builder.pl	2024-09-13 10:11:59
+@@ -205,6 +205,33 @@
+     $done{$pkgDir} = 1;
+ 
+     findFiles("", $pkgDir, "", $ignoreCollisions, $checkCollisionContents, $priority);
++
++    # <flox>
++    #
++    # When rendering flox develop envs treat propagated-build-inputs as
++    # propagated-user-env-packages so that required packages already
++    # present in the closure can be found from the one environment path.
++    # This is particularly relevant for interpreted languages like python
++    # that can then use a single value for PYTHONPATH rather than having
++    # to rely upon walking setup hooks for constructing a long PYTHONPATH
++    # during a potentially-unbounded instantiation.
++    #
++    if (exists $ENV{'FLOX_RECURSIVE_LINK'} and $ENV{'FLOX_RECURSIVE_LINK'} eq '1') {
++        foreach my $propagatedFN (
++            "$pkgDir/nix-support/propagated-user-env-packages", "$pkgDir/nix-support/propagated-build-inputs"
++        ) {
++            if (-e $propagatedFN) {
++                open PROP, "<$propagatedFN" or die;
++                my $propagated = <PROP>;
++                close PROP;
++                my @propagated = split ' ', $propagated;
++                foreach my $p (@propagated) {
++                    $postponed{$p} = 1 unless defined $done{$p};
++                }
++            }
++        }
++    } else {
++    # </flox>
+ 
+     my $propagatedFN = "$pkgDir/nix-support/propagated-user-env-packages";
+     if (-e $propagatedFN) {
+@@ -216,6 +243,11 @@
+             $postponed{$p} = 1 unless defined $done{$p};
+         }
+     }
++
++    # <flox>
++    }
++    # </flox>
++
+ }
+ 
+ # Read packages list.

@@ -62,15 +62,16 @@ let
       let _manifest = builtins.fromJSON (builtins.readFile manifest);
       in builtins.attrNames _manifest.manifest.build
     );
+    runtimePkgSuffix = "Runtime";
+    manifestBuildRuntimeOutputs = map (s: s + runtimePkgSuffix) manifestBuilds;
+    outputs = ["out" "develop"] ++ manifestBuildRuntimeOutputs;
 
 in
 runCommand name
   rec {
     inherit manifest ignoreCollisions checkCollisionContents passthru
             meta pathsToLink extraPrefix postBuild
-            nativeBuildInputs buildInputs;
-
-    outputs = ["out" "develop"] ++ manifestBuilds;
+            nativeBuildInputs buildInputs outputs;
 
     pkgs = builtins.toJSON (map (drv: {
       paths =
@@ -124,13 +125,14 @@ runCommand name
 
     # Iterate over manifest builds creating closures for each build as
     # specified in the manifest.
-    for build in ${builtins.toString manifestBuilds}; do
+    for buildRuntimeOutput in ${builtins.toString manifestBuildRuntimeOutputs}; do
+      build="''${buildRuntimeOutput%${runtimePkgSuffix}}"
       ${buildPackages.jq}/bin/jq -c -r -f ${build_closures_jq} \
         --arg activationScripts ${activationScripts} \
         --arg build $build \
         --arg system ${builtins.currentSystem} \
         ${manifest} > $tmppkgs
-      out=''${!build} pkgsPath=$tmppkgs FLOX_RECURSIVE_LINK=1 \
+      out="''${!buildRuntimeOutput}" pkgsPath=$tmppkgs FLOX_RECURSIVE_LINK=1 \
         ${buildPackages.perl}/bin/perl -w ${builder}
     done
 

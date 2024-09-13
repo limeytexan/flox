@@ -70,4 +70,4 @@ in buildFloxEnv {
 EOF
 } | exec \
   nix --extra-experimental-features nix-command \
-    build --file - --json --no-link '^*'
+    build -L --file - --json --no-link '^*'

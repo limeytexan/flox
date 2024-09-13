@@ -1,7 +1,7 @@
 # buildEnv creates a tree of symlinks to the specified paths.  This is
 # a fork of the hardcoded buildEnv in the Nix distribution.
 
-{ buildPackages, runCommand, lib, substituteAll, targetPlatform }:
+{ buildPackages, runCommand, lib, substituteAll }:
 
 let
   builder = substituteAll {
@@ -85,75 +85,57 @@ runCommand name
         # Add any extra outputs specified by the caller of `buildEnv`.
         ++ lib.filter (p: p!=null)
           (builtins.map (outName: drv.${outName} or null) extraOutputsToInstall);
-      priority = drv.meta.priority or 5;
+      priority = drv.meta.priority or lib.meta.defaultPriority or 5;
     }) paths);
-
-    # The develop output adds a single package, activation-scripts.
-    # I'm sure a Nix lang expert could make this more elegant
-    # by factoring out the paths assignment from above but this
-    # works for a demo.
-    developPkgs = builtins.toJSON ((map (drv: {
-      paths =
-        # First add the usual output(s): respect if user has chosen explicitly,
-        # and otherwise use `meta.outputsToInstall`. The attribute is guaranteed
-        # to exist in mkDerivation-created cases. The other cases (e.g. runCommand)
-        # aren't expected to have multiple outputs.
-        (
-          if
-            (! drv ? outputSpecified || ! drv.outputSpecified)
-            && drv.meta.outputsToInstall or null != null
-          then map (outName: drv.${outName}) drv.meta.outputsToInstall
-          else [drv]
-        )
-        # Add any extra outputs specified by the caller of `buildEnv`.
-        ++ lib.filter (p: p != null)
-          (builtins.map (outName: drv.${outName} or null) extraOutputsToInstall);
-      priority = drv.meta.priority or 5;
-    }) paths) ++ [
-      {
-        paths = [activationScripts];
-        priority = 1;
-      }
-    ]);
-
     preferLocalBuild = true;
     allowSubstitutes = false;
-
     # Nix "*Path" environment variables are automatically created by
     # way of the derivation `passAsFile` attribute as described in:
     #
     # https://nix.dev/manual/nix/2.18/language/advanced-attributes#adv-attr-passAsFile
     #
-    # The following causes `pkgsPath` and `developPkgsPath` to be set.
-    passAsFile = [ "pkgs" "developPkgs" ];
+    # The following causes `pkgsPath` to always be set.
+    passAsFile = [ "pkgs" ];
   }
   ''
     ${buildPackages.perl}/bin/perl -w ${builder}
 
     # The `builder.pl` script expects to receive the list of packages by
     # way of one of the `pkgsPath` or `pkgs` environment variables. Explicitly
-    # set these variables when building the "develop" output.
-    if [ -n "$developPkgsPath" ]; then
-      out=$develop pkgsPath=$developPkgsPath FLOX_RECURSIVE_LINK=1 \
-        ${buildPackages.perl}/bin/perl -w ${builder}
-    else
-      out=$develop pkgs=$developPkgs FLOX_RECURSIVE_LINK=1 \
-        ${buildPackages.perl}/bin/perl -w ${builder}
+    # set `pkgsPath` to pass our modified when building flox environments.
+
+    # Assert $pkgsPath is set.
+    if [ -z "$pkgsPath" ]; then
+      echo "Error: \$pkgsPath is not set." >&2
+      exit 1
     fi
+
+    # Add the activation scripts package to the list of packages and
+    # build the "develop" output.
+    tmppkgs=$(mktemp)
+    ${buildPackages.jq}/bin/jq -c -r '
+      . + [{
+        "paths": [ "${activationScripts}" ],
+        "priority": 1
+      }]
+    ' $pkgsPath > $tmppkgs
+    out=$develop pkgsPath=$tmppkgs FLOX_RECURSIVE_LINK=1 \
+      ${buildPackages.perl}/bin/perl -w ${builder}
 
     # Iterate over manifest builds creating closures for each build as
     # specified in the manifest.
     for build in ${builtins.toString manifestBuilds}; do
-      tmppkgs=$(mktemp)
       ${buildPackages.jq}/bin/jq -c -r -f ${build_closures_jq} \
         --arg activationScripts ${activationScripts} \
         --arg build $build \
-	--arg system ${targetPlatform.system} \
-	${manifest} > $tmppkgs
+        --arg system ${builtins.currentSystem} \
+        ${manifest} > $tmppkgs
       out=''${!build} pkgsPath=$tmppkgs FLOX_RECURSIVE_LINK=1 \
         ${buildPackages.perl}/bin/perl -w ${builder}
-      rm $tmppkgs
     done
+
+    # Clean up.
+    rm $tmppkgs
 
     eval "$postBuild"
   '')

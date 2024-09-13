@@ -68,4 +68,6 @@ in buildFloxEnv {
   paths = with builtins; [ ${storePathArgs[@]} ];
 }
 EOF
-} | exec nix-build -E - --attr all
+} | exec \
+  nix --extra-experimental-features nix-command \
+    build --file - --json --no-link '^*'

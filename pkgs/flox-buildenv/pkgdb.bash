@@ -1,0 +1,142 @@
+#
+# A translation script mapping old pkgdb calling semantics to the new
+# buildenv. Eventually we will retire this script once we update the
+# rust CLI to call into buildenv and the various nix tools directly.
+#
+set -eu
+
+declare NAME="$0"
+
+function buildenv() {
+  local OPTIONS=
+  local LONGOPTS=container,service-config:
+  local USAGE="Usage: $NAME buildenv [ --container ] [ --service-config <path> ]"
+  local PARSED=$("@getopt@/bin/getopt" --options="$OPTIONS" --longoptions="$LONGOPTS" --name "$NAME" -- "$@")
+  # shellcheck disable=SC2181
+  if [[ $? -ne 0 ]]; then
+    echo "ERROR: failed to parse options"
+    exit 1
+  fi
+  # Use eval to remove quotes and replace them with spaces.
+  eval set -- "$PARSED"
+  # Set default values for options.
+  local BUILD_CONTAINER=false
+  local SERVICE_CONFIG=
+  while true; do
+    case "$1" in
+      --container)
+        BUILD_CONTAINER=true
+        echo "ERROR: option --container is not supported" >&2
+        exit 1
+        ;;
+      --service-config)
+        shift
+        SERVICE_CONFIG="$1"
+        shift
+        break
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        echo "ERROR: invalid option: $1" >&2
+        echo "$USAGE" >&2
+        exit 1
+        ;;
+    esac
+  done
+  exec @out@/bin/buildenv "$@"
+}
+
+function linkenv() {
+  local OPTIONS=
+  local LONGOPTS=out-link:,store-path:
+  local USAGE="Usage: $NAME buildenv --out-link <path> --store-path <path>"
+  local PARSED=$("@getopt@/bin/getopt" --options="$OPTIONS" --longoptions="$LONGOPTS" --name "$NAME" -- "$@")
+  # shellcheck disable=SC2181
+  if [[ $? -ne 0 ]]; then
+    echo "ERROR: failed to parse options"
+    exit 1
+  fi
+  # Use eval to remove quotes and replace them with spaces.
+  eval set -- "$PARSED"
+  # Set default values for options.
+  local OUT_LINK=
+  local STORE_PATH=
+  while true; do
+    case "$1" in
+      --out-link)
+        shift
+        OUT_LINK="$1"
+        shift
+        ;;
+      --store-path)
+        shift
+        STORE_PATH="$1"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        echo "ERROR: invalid option: $1" >&2
+        echo "$USAGE" >&2
+        exit 1
+        ;;
+    esac
+  done
+  if [ -z "$OUT_LINK" ]; then
+    echo "ERROR: missing required option --out-link" >&2
+    echo "$USAGE" >&2
+    exit 1
+  fi
+  if [ -z "$STORE_PATH" ]; then
+    echo "ERROR: missing required option --store-path" >&2
+    echo "$USAGE" >&2
+    exit 1
+  fi
+  # Old command using nix-store:
+  # exec @nix@/bin/nix-store --add-root "$OUT_LINK" -r "$STORE_PATH"
+  #
+  # There's no new nix command equivalent, but we can use nix build instead.
+  exec @nix@/bin/nix build --out-link "$OUT_LINK" "$STORE_PATH"
+}
+
+function lock_flake_installable() {
+  echo "ERROR: lock-flake-installable subcommand is not supported" >&2
+  exit 1
+}
+
+declare USAGE="Usage: $NAME (buildenv|linkenv|lock-flake-installable) <args>"
+if [ $# -eq 0 ]; then
+  echo "ERROR: missing subcommand" >&2
+  echo "$USAGE" >&2
+  exit 1
+fi
+case "$1" in
+  buildenv)
+    shift
+    buildenv "$@"
+    echo "ERROR: buildenv() should not return" >&2
+    exit 1
+    ;;
+  linkenv)
+    shift
+    linkenv "$@"
+    echo "ERROR: linkenv() should not return" >&2
+    exit 1
+    ;;
+  lock-flake-installable)
+    shift
+    lock_flake_installable "$@"
+    echo "ERROR: lock_flake_installable() should not return" >&2
+    exit 1
+    ;;
+  *)
+    echo "ERROR: unknown subcommand '$1'" >&2
+    echo "$USAGE" >&2
+    exit 1
+    ;;
+esac

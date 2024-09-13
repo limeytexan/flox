@@ -12,7 +12,7 @@
 #     [ -a <activation-scripts-pkg> ] \
 #     <path/to/manifest.lock>
 
-set -e
+set -eu
 
 export PATH=@nix@/bin:"$PATH"
 

@@ -62,8 +62,8 @@ let
       let _manifest = builtins.fromJSON (builtins.readFile manifest);
       in builtins.attrNames _manifest.manifest.build
     );
-    runtimePkgSuffix = "Runtime";
-    manifestBuildRuntimeOutputs = map (s: s + runtimePkgSuffix) manifestBuilds;
+    runtimePkgPrefix = "build_";
+    manifestBuildRuntimeOutputs = map (s: runtimePkgPrefix + s) manifestBuilds;
     outputs = ["out" "develop"] ++ manifestBuildRuntimeOutputs;
 
 in
@@ -126,7 +126,7 @@ runCommand name
     # Iterate over manifest builds creating closures for each build as
     # specified in the manifest.
     for buildRuntimeOutput in ${builtins.toString manifestBuildRuntimeOutputs}; do
-      build="''${buildRuntimeOutput%${runtimePkgSuffix}}"
+      build="''${buildRuntimeOutput#${runtimePkgPrefix}}"
       ${buildPackages.jq}/bin/jq -c -r -f ${build_closures_jq} \
         --arg activationScripts ${activationScripts} \
         --arg build $build \

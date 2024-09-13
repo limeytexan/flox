@@ -8,7 +8,7 @@
   lib,
   nix,
   nixpkgsClone,
-  runCommandLocal,
+  runCommandNoCCLocal,
   writers,
 }: let
   pname = "flox-buildenv";
@@ -24,13 +24,14 @@
       builtins.readFile ./pkgdb.bash
     )
   );
+  buildenv_nix = ./buildenv.nix;
   buildenv_nix_patch = ./buildenv.nix.patch;
   builder_pl_patch = ./builder.pl.patch;
   build_packages_jq = ./build-packages.jq;
   build_closures_jq = ./build-closures.jq;
 
 in
-  runCommandLocal
+  runCommandNoCCLocal
   "${pname}-${version}"
   {
     inherit coreutils getopt jq nix pname version;
@@ -42,8 +43,9 @@ in
     substituteAllInPlace "$out/bin/buildenv"
     cp ${pkgdb} "$out/bin/pkgdb"
     substituteAllInPlace "$out/bin/pkgdb"
-    cp --no-preserve=mode ${nixpkgsBuildenvRoot}/default.nix "$out/lib/buildenv.nix"
-    (cd $out/lib && exec patch -p2 < ${buildenv_nix_patch})
+    #cp --no-preserve=mode ${nixpkgsBuildenvRoot}/default.nix "$out/lib/buildenv.nix"
+    #(cd $out/lib && exec patch -p2 < ${buildenv_nix_patch})
+    cp ${buildenv_nix} "$out/lib/buildenv.nix"
     cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
     (cd $out/lib && exec patch -p2 < ${builder_pl_patch})
     cp ${build_packages_jq} "$out/lib/build-packages.jq"

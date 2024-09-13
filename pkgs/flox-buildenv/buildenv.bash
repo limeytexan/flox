@@ -12,7 +12,7 @@
 #     [ -a <activation-scripts-pkg> ] \
 #     <path/to/manifest.lock>
 
-set -eu
+set -x -eu
 
 export PATH=@nix@/bin:"$PATH"
 
@@ -71,3 +71,4 @@ EOF
 } | exec \
   nix --extra-experimental-features nix-command \
     build -L --file - --json --no-link '^*'
+#} | exec nix-build --no-link -E - --attr all

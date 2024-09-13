@@ -4,7 +4,7 @@
 # to construct an environment package of symlinks referring to the
 # the packages named in the `manifest.build.<name>.packages` array,
 # or the `toplevel` group packages if not specified, plus the
-# supplied `activationScripts` package.
+# supplied `activationScripts` and `userActivationScripts` packages.
 #
 
 # Sample manifest.lock:
@@ -85,7 +85,12 @@
 #   }
 # ]
 
-( "Usage: jq -f <this file> --arg system <system> --arg build <name> --arg activationScripts <activationScriptsPkg> <path/to/manifest.lock>\n" +
+( "Usage: jq -f <this file> " +
+    "--arg system <system> " +
+    "--arg build <name> " +
+    "--arg activationScripts <path> " +
+    "--arg userActivationScripts <path> " +
+    "<path/to/manifest.lock>\n" +
   "Valid systems: x86_64-linux, aarch64-linux, x86_64-darwin, aarch64-darwin\n" ) as $usage
 |
 
@@ -126,6 +131,13 @@ end
 # Verify we've been called with `--arg activationScripts <pkg>`.
 if ($ARGS.named | has("activationScripts")) then . else
   "ERROR: missing '--arg activationScripts'\n" + $usage
+  | halt_error(1)
+end
+|
+
+# Verify we've been called with `--arg userActivationScripts <pkg>`.
+if ($ARGS.named | has("userActivationScripts")) then . else
+  "ERROR: missing '--arg userActivationScripts'\n" + $usage
   | halt_error(1)
 end
 |
@@ -192,6 +204,10 @@ $packages | map(
 [
   {
     paths: [ $activationScripts ],
+    priority: 1
+  },
+  {
+    paths: [ $userActivationScripts ],
     priority: 1
   }
 ]

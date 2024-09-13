@@ -1,6 +1,7 @@
 {
   coreutils,
   flox-activation-scripts,
+  getopt,
   gnused,
   jq,
   procps,
@@ -32,7 +33,7 @@ in
   runCommandLocal
   "${pname}-${version}"
   {
-    inherit coreutils jq nix pname version;
+    inherit coreutils getopt jq nix pname version;
     activationScripts = flox-activation-scripts;
   }
   ''

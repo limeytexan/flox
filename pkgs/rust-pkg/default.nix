@@ -3,6 +3,7 @@
   cacert,
   darwin,
   flox-activation-scripts,
+  flox-buildenv,
   flox-pkgdb,
   gitMinimal,
   glibcLocalesUtf8,
@@ -57,9 +58,9 @@
       NIX_PKG = nix;
       NIX_BIN = "${nix}/bin/nix"; # only used for nix invocations in tests
       PKGDB_BIN =
-        if flox-pkgdb == null
+        if flox-buildenv == null
         then "pkgdb"
-        else "${flox-pkgdb}/bin/pkgdb";
+        else "${flox-buildenv}/bin/pkgdb";
       WATCHDOG_BIN =
         if WATCHDOG_BIN == null
         then "flox-watchdog"
@@ -201,6 +202,7 @@ in
           cargoDepsArtifacts
           pkgsFor
           nix
+          flox-buildenv
           flox-pkgdb
           ;
 

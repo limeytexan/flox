@@ -1,4 +1,5 @@
 {
+  flox-buildenv,
   flox-pkgdb,
   gitMinimal,
   gnumake,
@@ -25,9 +26,9 @@
     # rather than relying on or modifying the user's `PATH` variable
     GIT_PKG = gitMinimal;
     PKGDB_BIN =
-      if flox-pkgdb == null
+      if flox-buildenv == null
       then "pkgdb"
-      else "${flox-pkgdb}/bin/pkgdb";
+      else "${flox-buildenv}/bin/pkgdb";
 
     # develop with `flox-package-builder.devShellHook`
     FLOX_BUILD_MK = "${flox-package-builder}/libexec/flox-build.mk";
@@ -80,6 +81,9 @@ in
             gitMinimal
             process-compose
             coreutils # for `sleep infinity`
+          ]
+          ++ lib.optional (flox-buildenv != null) [
+            flox-buildenv
           ]
           ++ lib.optional (flox-pkgdb != null) [
             flox-pkgdb

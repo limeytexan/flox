@@ -46,7 +46,14 @@ function buildenv() {
         ;;
     esac
   done
-  exec @out@/bin/buildenv "$@"
+  # Upon success the old pkgdb returned:
+  #   {"store_path":"/nix/store/gs83baxsn1bsg9rkdqrv18i0lhk75arf-environment"}
+  # ... whereas we now return information about all storepaths rendered:
+  #   [{"drvPath":"/nix/store/lv7c3qnzkbvmj5sg26qbsxbbwxqsh19g-floxenv.drv","outputs":{"develop":"/nix/store/zy6r86vp164qnll9n3l02yqn7qz92yhx-floxenv-develop","out":"/nix/store/f7z7lsh7r69shyfs2vlfgdknp7hz8k1g-floxenv"}}]
+  #
+  # For now, use jq to report the "develop" output path as the "store_path".
+  @out@/bin/buildenv "$@" | @jq@/bin/jq -r '.[0] | {"store_path": .outputs.develop}'
+  exit 0
 }
 
 function linkenv() {
@@ -101,7 +108,17 @@ function linkenv() {
   # exec @nix@/bin/nix-store --add-root "$OUT_LINK" -r "$STORE_PATH"
   #
   # There's no new nix command equivalent, but we can use nix build instead.
-  exec @nix@/bin/nix build --out-link "$OUT_LINK" "$STORE_PATH"
+  #
+  # We're also expected to return the store path as a JSON object:
+  #   {"store_path":"/nix/store/f7z7lsh7r69shyfs2vlfgdknp7hz8k1g-floxenv"}
+  store_path="$(@nix@/bin/nix --extra-experimental-features nix-command \
+    build --print-out-paths --out-link "$OUT_LINK" "$STORE_PATH")"
+  if [ $? -ne 0 ]; then
+    echo "ERROR: failed to link store path" >&2
+    exit 1
+  fi
+  echo "{\"store_path\":\"$store_path\"}"
+  exit 0
 }
 
 function lock_flake_installable() {

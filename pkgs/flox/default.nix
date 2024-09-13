@@ -4,9 +4,9 @@
   lib,
   symlinkJoin,
   makeBinaryWrapper,
+  flox-buildenv,
   flox-pkgdb,
   flox-watchdog,
-  flox-buildenv,
   flox-cli,
   flox-manpages,
   process-compose,
@@ -36,7 +36,7 @@ in
       wrapProgram $out/bin/flox \
         ${lib.optionalString (SENTRY_DSN != null) "--set FLOX_SENTRY_DSN \"${SENTRY_DSN}\" "} \
         ${lib.optionalString (SENTRY_ENV != null) "--set FLOX_SENTRY_ENV \"${SENTRY_ENV}\" "} \
-        --set PKGDB_BIN       "${flox-pkgdb}/bin/pkgdb" \
+        --set PKGDB_BIN       "${flox-buildenv}/bin/pkgdb" \
         --set BUILDENV_BIN    "${flox-buildenv}/bin/buildenv" \
         --set FLOX_BIN        "${flox-cli}/bin/flox" \
         --set WATCHDOG_BIN    "${flox-watchdog}/bin/flox-watchdog" \

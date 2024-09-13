@@ -6,17 +6,43 @@
 #   sh -c "$(jq -f <this file> --arg system <system> <path/to/manifest.lock>)"
 #
 
-# Sample element:
+# Sample manifest.lock:
 # {
-#   "active": true,
-#   "attrPath": "evalCatalog.$system.stable.vim",
-#   "originalUrl": "flake:nixpkgs-flox",
-#   "outputs": null,
-#   "priority": 5
-#   "storePaths": [
-#     "/nix/store/ivwgm9bdsvhnx8y7ac169cx2z82rwcla-vim-8.2.4350"
+#   "lockfile-version": 1,
+#   "packages": [
+#     {
+#       "attr_path": "curl",
+#       "group": "toplevel",
+#       "outputs": {
+#         "bin": "/nix/store/1033k8sfipzk1ly7igmawdra7lg348wb-curl-8.7.1-bin",
+#         "dev": "/nix/store/fwbjf1ikz055flksk2isiam4ajl0rpa5-curl-8.7.1-dev",
+#         "devdoc": "/nix/store/yvgigsmfgxx4raiqi7qfn1aygf3fp5lj-curl-8.7.1-devdoc",
+#         "man": "/nix/store/lqb2rgnwxqvqppgda0p9lnw02ddzwiyc-curl-8.7.1-man",
+#         "out": "/nix/store/37ydms17yxwi5y5rck08c93jad1rmrn8-curl-8.7.1"
+#       },
+#       "outputs_to_install": [
+#         "bin",
+#         "man"
+#       ],
+#       "priority": 5,
+#       "system": "aarch64-darwin",
+#       ...
+#     },
+#     {
+#       "attr_path": "xorg.xeyes",
+#       "group": "toplevel",
+#       "outputs": {
+#         "out": "/nix/store/zl1d3gmhvpb1s6jdbqxmy3y1rflrr71v-xeyes-1.3.0"
+#       },
+#       "outputs_to_install": [
+#         "out"
+#       ],
+#       "priority": 5,
+#       "system": "x86_64-linux",
+#       ...
+#     }
 #   ],
-#   "url": "github:flox/nixpkgs-flox/ef23087ad88d59f0c0bc0f05de65577009c0c676",
+#   ...
 # }
 
 # Load the manifest from the file passed in the first argument.

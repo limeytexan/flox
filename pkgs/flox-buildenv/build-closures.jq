@@ -1,7 +1,10 @@
 #
-# Quick jq script to generated a "pkgs" format JSON blob for each
-# manifest build output. This blob is then consumed by `builder.pl`
-# for constructing a closure of packages.
+# jq script to generate a "pkgs" format JSON blob for each manifest
+# build runtime output. This blob is then consumed by `builder.pl`
+# to construct an environment package of symlinks referring to the
+# the packages named in the `manifest.build.<name>.packages` array,
+# or the `toplevel` group packages if not specified, plus the
+# supplied `activationScripts` package.
 #
 
 # Sample manifest.lock:
@@ -73,6 +76,12 @@
 #       "/nix/store/lqb2rgnwxqvqppgda0p9lnw02ddzwiyc-curl-8.7.1-man"
 #     ],
 #     "priority": 5
+#   }
+#   {
+#     "paths": [
+#       "/nix/store/zc3y7cr5b073n8d7ma2k1rr7b28a9qlw-w4dnl8i62baxgqz6y1qhqb60dk6qn761-flox-activation-scripts"
+#     ],
+#     "priority": 1
 #   }
 # ]
 
@@ -166,7 +175,8 @@ $builds[$build] as $theBuild |
   )
 ) as $buildPackageAttrPaths |
 
-# Filter the system-specific packages found in the "toplevel" pkg-group.
+# Filter the system-specific packages found in the "toplevel" pkg-group
+# to include only those packages found in `$buildPackageAttrPaths`.
 $packages | map(
   select(.system == $system) |
   select(.group == "toplevel") |
@@ -177,7 +187,9 @@ $packages | map(
     paths: [ $storePath ],
     priority: .priority
   }
-) + [
+) +
+# Always include the activation-scripts package.
+[
   {
     paths: [ $activationScripts ],
     priority: 1

@@ -89,19 +89,19 @@ let
       mkdir -p $out/activate.d
       echo -n '${defaultEnvrc}' > $out/activate.d/envrc
       set -x
-      time ${buildPackages.jq}/bin/jq -r '
+      ${buildPackages.jq}/bin/jq -r '
         .manifest.vars |
         to_entries[] |
         "export \(.key)=\"\(.value)\""
       ' ${manifestFile} >> $out/activate.d/envrc
-      time ${buildPackages.jq}/bin/jq -r '
+      ${buildPackages.jq}/bin/jq -r '
         if (.manifest.hook | has("on-activate")) then
           .manifest.hook["on-activate"]
         else empty end
       ' ${manifestFile} > $out/activate.d/hook-on-activate
       [ -s $out/activate.d/hook-on-activate ] || rm $out/activate.d/hook-on-activate
       for i in common bash fish tcsh zsh; do
-        time ${buildPackages.jq}/bin/jq -r --arg section $i '
+        ${buildPackages.jq}/bin/jq -r --arg section $i '
           if (.manifest.profile | has($section)) then
             .manifest.profile[$section]
           else empty end
@@ -158,7 +158,7 @@ runCommandNoCCLocal name
     # Add the activation scripts package to the list of packages and
     # build the "develop" output.
     tmppkgs=$(mktemp)
-    time ${buildPackages.jq}/bin/jq -c -r '
+    ${buildPackages.jq}/bin/jq -c -r '
       . + [
         {
           "paths": [ "${activationScripts}" ],
@@ -177,7 +177,7 @@ runCommandNoCCLocal name
     # specified in the manifest.
     for buildRuntimeOutput in ${builtins.toString manifestBuildRuntimeOutputs}; do
       build="''${buildRuntimeOutput#${runtimePkgPrefix}}"
-      time ${buildPackages.jq}/bin/jq -c -r -f ${build_closures_jq} \
+      ${buildPackages.jq}/bin/jq -c -r -f ${build_closures_jq} \
         --arg activationScripts ${activationScripts} \
         --arg userActivationScripts ${userActivationScripts} \
         --arg build $build \

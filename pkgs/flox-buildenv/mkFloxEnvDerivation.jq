@@ -68,7 +68,8 @@
 ( "Usage: jq -f <this file> " +
     "--arg name <name> " +
     "--arg system <system> " +
-    "--arg build <name> " +
+    "--arg builder <path> " +
+    "--arg manifestLock <path> " +
     "--arg activationScripts <path> " +
     "--arg userActivationScripts <path> " +
     "<path/to/manifest.lock>\n" +
@@ -78,6 +79,20 @@
 # Verify we've been called with `--arg system <system>`.
 if ($ARGS.named | has("system")) then . else
   "ERROR: missing '--arg system'\n" + $usage
+  | halt_error(1)
+end
+|
+
+# Verify we've been called with `--arg builder <builder>`.
+if ($ARGS.named | has("builder")) then . else
+  "ERROR: missing '--arg builder'\n" + $usage
+  | halt_error(1)
+end
+|
+
+# Verify we've been called with `--arg manifestLock <path/to/manifest.lock>`.
+if ($ARGS.named | has("manifestLock")) then . else
+  "ERROR: missing '--arg manifestLock'\n" + $usage
   | halt_error(1)
 end
 |
@@ -122,7 +137,7 @@ def packagesToPkgs($_packages):
       paths: [ $storePath ],
       priority: .priority
     }
-  );
+  ) | @json;
 
 # We can have nice names for things.
 .packages as $packages |
@@ -218,16 +233,14 @@ $manifest.build as $builds |
 # Identify all build runtime closures to be rendered and include them
 # in the list of outputs to render. List all output names as keys in a
 # hash with all empty values as Nix will fill in that part.
-{
-  "outputs": (
-    {
-      "out": {},
-      "develop": {}
-    } * (
-      $builds | with_entries(.value = {})
-    )
+(
+  {
+    "out": {},
+    "develop": {}
+  } * (
+    $builds | with_entries(.value = {})
   )
-} as $outputs
+) as $outputs
 |
 
 # The "inputSrcs" value is just a list of storepaths to be mapped into
@@ -241,13 +254,25 @@ $manifest.build as $builds |
 ) as $inputSrcs
 |
 
-debug($envPkgSets) |
+# Other required environment variables.
+{
+  # "passAsFile" causes stdenv to pass the specified environment variables
+  # as files instead of as strings. This is necessary for large environments.
+  "passAsFile": ( $envPkgSets | keys | join(" ") ),
+  "preferLocalBuild": "1",
+  "manifest": $manifestLock,
+  "system": $system
+} as $otherEnv
+|
 
+# Emit the final derivation JSON.
 {
   "name": $name,
-  "system": $system,
   "outputs": $outputs,
   "inputSrcs": $inputSrcs,
-  "builder": "/nix/store/0",
-  "env": $envPkgSets
+  "inputDrvs": {},
+  "system": $system,
+  "builder": $builder,
+  "args": [],
+  "env": ( $otherEnv * $envPkgSets )
 }

@@ -89,16 +89,18 @@ rm -rf $tmpdir
 
 # Render derivation for building the flox environment.
 # TODO: do this part in Rust.
-##### declare derivationPath
-##### derivationPath="$( \
+declare derivationPath
+derivationPath="$( \
   $_jq -f @out@/lib/mkFloxEnvDerivation.jq \
     --arg name "$name" \
     --arg system "@system@" \
+    --arg builder "@out@/lib/builder.pl" \
+    --arg manifestLock "$manifestRealPath" \
     --arg activationScripts "$activationScripts" \
     --arg userActivationScripts "$userActivationScripts" \
-    $manifestRealPath
-#####   $_nix derivation add \
-##### )"
+    $manifestRealPath | \
+  $_nix derivation add \
+)"
 
 # DEBUG
 exit 0

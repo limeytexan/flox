@@ -11,7 +11,8 @@
   lib,
   nix,
   nixpkgsClone,
-  runCommandNoCCLocal,
+  perl,
+  runCommandNoCC,
   stdenv,
   writers,
   writeText,
@@ -35,25 +36,31 @@
   build_packages_jq = ./build-packages.jq;
   build_closures_jq = ./build-closures.jq;
   mkFloxEnvDerivation_jq = ./mkFloxEnvDerivation.jq;
+  activationScripts = flox-activation-scripts;
+  activationScriptsDrv = "FOORBAR";
+  builderDrv = "FOOBAR";
+  defaultEnvrc = writeText "default.envrc" (''
+    # Default environment variables
+    export SSL_CERT_FILE="''${SSL_CERT_FILE:-${cacert}/etc/ssl/certs/ca-bundle.crt}"
+    export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-''${SSL_CERT_FILE}}"
+  '' + lib.optionalString stdenv.isLinux ''
+    export LOCALE_ARCHIVE="''${LOCALE_ARCHIVE:-${glibcLocalesUtf8}/lib/locale/locale-archive}"
+  '' + lib.optionalString stdenv.isDarwin ''
+    export NIX_COREFOUNDATION_RPATH="''${NIX_COREFOUNDATION_RPATH:-"${darwin.CF}/Library/Frameworks"}"
+    export PATH_LOCALE="''${PATH_LOCALE:-${darwin.locale}/share/locale}"
+  '' + ''
+    # Static environment variables
+  '');
 
 in
-  runCommandNoCCLocal
+  runCommandNoCC
   "${pname}-${version}"
   {
-    inherit coreutils getopt jq nix pname version;
-    activationScripts = flox-activation-scripts;
-    defaultEnvrc = writeText "default.envrc" (''
-      # Default environment variables
-      export SSL_CERT_FILE="''${SSL_CERT_FILE:-${cacert}/etc/ssl/certs/ca-bundle.crt}"
-      export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-''${SSL_CERT_FILE}}"
-    '' + lib.optionalString stdenv.isLinux ''
-      export LOCALE_ARCHIVE="''${LOCALE_ARCHIVE:-${glibcLocalesUtf8}/lib/locale/locale-archive}"
-    '' + lib.optionalString stdenv.isDarwin ''
-      export NIX_COREFOUNDATION_RPATH="''${NIX_COREFOUNDATION_RPATH:-"${darwin.CF}/Library/Frameworks"}"
-      export PATH_LOCALE="''${PATH_LOCALE:-${darwin.locale}/share/locale}"
-    '' + ''
-      # Static environment variables
-    '');
+    inherit coreutils getopt jq nix pname version
+      activationScripts activationScriptsDrv builderDrv defaultEnvrc;
+    # Substitutions for builder.pl.
+    inherit (builtins) storeDir;
+    perl = perl + "/bin/perl";
   }
   ''
     mkdir -p "$out/bin" "$out/lib"
@@ -66,6 +73,8 @@ in
     cp ${buildenv_nix} "$out/lib/buildenv.nix"
     cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
     (cd $out/lib && exec patch -p2 < ${builder_pl_patch})
+    chmod +x "$out/lib/builder.pl"
+    substituteAllInPlace "$out/lib/builder.pl"
     cp ${build_packages_jq} "$out/lib/build-packages.jq"
     cp ${build_closures_jq} "$out/lib/build-closures.jq"
     cp ${mkFloxEnvDerivation_jq} "$out/lib/mkFloxEnvDerivation.jq"

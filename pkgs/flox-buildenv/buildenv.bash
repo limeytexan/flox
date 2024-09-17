@@ -18,6 +18,7 @@ OPTSTRING="n:a:"
 
 declare name="floxenv"
 declare activationScripts="@activationScripts@"
+declare activationScriptsDrv="@activationScriptsDrv@"
 while getopts $OPTSTRING opt; do
   case $opt in
     n)
@@ -59,7 +60,6 @@ source <($_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest
 
 # Render the (user) activation-scripts package from the manifest.
 # TODO: do this in Rust.
-set -x
 declare tmpdir
 tmpdir=$(mktemp -d)
 mkdir -p "$tmpdir/activate.d"
@@ -102,11 +102,8 @@ derivationPath="$( \
   $_nix derivation add \
 )"
 
-# DEBUG
-exit 0
-
 # Build the flox environment.
-exec $_nix build -L --no-link "$derivationPath" --json '^*'
+exec $_nix build -L --no-link --json "$derivationPath"'^*'
 
 ### # TODO: let buildenv.nix parse the manifest.lock directly
 ### declare -a storePathArgs

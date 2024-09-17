@@ -247,20 +247,26 @@ $manifest.build as $builds |
 # the build "container", and it's safe to just list all storepaths
 # encountered in $packages.
 (
-  $outPackages | map(
-    .outputs_to_install[] as $output |
-    .outputs[$output]
+  (
+    $outPackages | map(
+      .outputs_to_install[] as $output |
+      .outputs[$output]
+    )
   )
 ) as $inputSrcs
 |
 
 # Other required environment variables.
 {
+  "checkCollisionContents": "",
+  "extraPrefix": "",
+  "ignoreCollisions": "",
+  "manifest": $manifestLock,
   # "passAsFile" causes stdenv to pass the specified environment variables
   # as files instead of as strings. This is necessary for large environments.
   "passAsFile": ( $envPkgSets | keys | join(" ") ),
+  "pathsToLink": "/",
   "preferLocalBuild": "1",
-  "manifest": $manifestLock,
   "system": $system
 } as $otherEnv
 |
@@ -272,7 +278,10 @@ $manifest.build as $builds |
   "inputSrcs": $inputSrcs,
   "inputDrvs": {},
   "system": $system,
-  "builder": $builder,
-  "args": [],
+#  "builder": $builder,
+#  "args": [],
+# Uncomment this to enable debugging.
+  "builder": "/bin/sh",
+  "args": [ "-x", "-c", $builder ],
   "env": ( $otherEnv * $envPkgSets )
 }

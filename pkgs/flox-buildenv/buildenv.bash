@@ -89,21 +89,21 @@ rm -rf $tmpdir
 
 # Render derivation for building the flox environment.
 # TODO: do this part in Rust.
-declare derivationPath
-derivationPath="$( \
-  $_jq -f @out@/lib/mkFloxEnvDerivation.jq \
-    --arg name "$name" \
-    --arg system "@system@" \
-    --arg builder "@out@/lib/builder.pl" \
-    --arg manifestLock "$manifestRealPath" \
-    --arg activationScripts "$activationScripts" \
-    --arg userActivationScripts "$userActivationScripts" \
-    $manifestRealPath | \
-  $_nix derivation add \
-)"
+#declare derivationPath
+#derivationPath="$( \
+#  $_jq -f @out@/lib/mkFloxEnvDerivation.jq \
+#    --arg name "$name" \
+#    --arg system "@system@" \
+#    --arg builder "@out@/lib/builder.pl" \
+#    --arg manifestLock "$manifestRealPath" \
+#    --arg activationScripts "$activationScripts" \
+#    --arg userActivationScripts "$userActivationScripts" \
+#    $manifestRealPath | \
+#cat #  $_nix derivation add \
+#)"
 
 # Build the flox environment.
-exec $_nix build -L --no-link --json "$derivationPath"'^*'
+# exec $_nix build -L --no-link --json "$derivationPath"'^*'
 
 ### # TODO: let buildenv.nix parse the manifest.lock directly
 ### declare -a storePathArgs
@@ -124,3 +124,21 @@ exec $_nix build -L --no-link --json "$derivationPath"'^*'
 ###   nix --extra-experimental-features nix-command \
 ###     build -L --file - --json --no-link '^*'
 ### #} | exec nix-build --no-link -E - --attr all
+
+
+{ cat <<EOF
+builtins.derivation {
+  name = "$name";
+  system = "@system@";
+  # builder = "@out@/lib/builder.pl";
+  builder = "/bin/sh";
+  args = [ "-x" "-c" "/bin/ls /bin && /bin/pwd && /bin/ls -la && export" ];
+  activationScripts = @activationScripts@;
+  manifest = builtins.toPath "$manifestRealPath";
+  paths = with builtins; [ ${storePathArgs[@]} ];
+}
+EOF
+} | exec \
+  nix --extra-experimental-features nix-command \
+    build -L --file - --json --no-link '^*'
+

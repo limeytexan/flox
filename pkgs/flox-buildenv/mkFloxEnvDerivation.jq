@@ -258,10 +258,12 @@ $manifest.build as $builds |
 
 # Other required environment variables.
 {
+  "out": "/nix/store/placeholder",
   "checkCollisionContents": "",
   "extraPrefix": "",
   "ignoreCollisions": "",
   "manifest": $manifestLock,
+  "outputs": ( $outputs | keys | join(" ") ),
   # "passAsFile" causes stdenv to pass the specified environment variables
   # as files instead of as strings. This is necessary for large environments.
   "passAsFile": ( $envPkgSets | keys | join(" ") ),
@@ -276,12 +278,34 @@ $manifest.build as $builds |
   "name": $name,
   "outputs": $outputs,
   "inputSrcs": $inputSrcs,
-  "inputDrvs": {},
+# The output paths are based on the sum of the input derivations.
+# This cannot be empty.
+  "inputDrvs": {
+#    "/nix/store/h3i6ryrlnzjrpnlgg3ddya8asv5gk9qk-builder.pl.drv": [
+#      "out"
+#    ],
+#    "/nix/store/lq2vx4dgzlk8qf78mjhp5hd0xmhlm13h-activation-scripts.drv": [
+#      "out"
+#    ],
+#    "/nix/store/wx6lk23w4s4c6cl1swmbn5v0k23pdnr9-stdenv-darwin.drv": [
+#      "out"
+#    ],
+#    "/nix/store/x0aqbimy2ay89xsd239szqhhmvpf8r5v-jq-1.7.drv": [
+#      "bin"
+#    ],
+#    "/nix/store/xwmh3cs9jh4h28hcjh895yxsblxqx4ix-perl-5.38.0.drv": [
+#      "out"
+#    ],
+#    "/nix/store/z9ff5rgsgbz68pdvnl0cn1mgkp82k37k-bash-5.2-p15.drv": [
+#      "out"
+#    ]
+  },
   "system": $system,
 #  "builder": $builder,
 #  "args": [],
 # Uncomment this to enable debugging.
   "builder": "/bin/sh",
-  "args": [ "-x", "-c", $builder ],
+#  "args": [ "-x", "-c", "for outputName in \"${!outputs[@]}\"; do export \"$outputName=${outputs[$outputName]}\"; done && \($builder)" ],
+  "args": [ "-x", "-c", "/bin/ls /bin && /bin/pwd && /bin/ls -la && export && \($builder)" ],
   "env": ( $otherEnv * $envPkgSets )
 }

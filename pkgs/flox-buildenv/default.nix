@@ -1,4 +1,5 @@
 {
+  bash,
   cacert,
   darwin,
   coreutils,
@@ -32,6 +33,7 @@
   );
   buildenv_nix = ./buildenv.nix;
   buildenv_nix_patch = ./buildenv.nix.patch;
+  builder_pl = ./builder.pl;
   builder_pl_patch = ./builder.pl.patch;
   build_packages_jq = ./build-packages.jq;
   build_closures_jq = ./build-closures.jq;
@@ -51,12 +53,33 @@
   '' + ''
     # Static environment variables
   '');
+  builderBash = writers.writeBash "builder.bash" ''
+    set -eux
+    # /bin/cat $NIX_ATTRS_JSON_FILE
+    source $NIX_ATTRS_SH_FILE
+    export \
+      extraPrefix \
+      pathsToLink \
+      ignoreCollisions \
+      checkCollisionContents \
+      manifest
+    for outputName in "''${!outputs[@]}"; do
+      if [ "$outputName" = "out" ]; then
+        @out@/lib/builder.pl
+      else
+        pkgsVar="''${outputName}Pkgs"
+        out="''${outputs[$outputName]}" pkgs="''${!pkgsVar}" \
+          FLOX_RECURSIVE_LINK=1 \
+	  @out@/lib/builder.pl
+      fi
+    done
+  '';
 
 in
   runCommandNoCC
   "${pname}-${version}"
   {
-    inherit coreutils getopt jq nix pname version
+    inherit coreutils getopt jq nix pname version builderBash
       activationScripts activationScriptsDrv builderDrv defaultEnvrc;
     # Substitutions for builder.pl.
     inherit (builtins) storeDir;
@@ -71,10 +94,13 @@ in
     #cp --no-preserve=mode ${nixpkgsBuildenvRoot}/default.nix "$out/lib/buildenv.nix"
     #(cd $out/lib && exec patch -p2 < ${buildenv_nix_patch})
     cp ${buildenv_nix} "$out/lib/buildenv.nix"
-    cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
-    (cd $out/lib && exec patch -p2 < ${builder_pl_patch})
+    #cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
+    #(cd $out/lib && exec patch -p2 < ${builder_pl_patch})
+    cp ${builder_pl} "$out/lib/builder.pl"
     chmod +x "$out/lib/builder.pl"
     substituteAllInPlace "$out/lib/builder.pl"
+    cp ${builderBash} "$out/lib/builder.bash"
+    substituteAllInPlace "$out/lib/builder.bash"
     cp ${build_packages_jq} "$out/lib/build-packages.jq"
     cp ${build_closures_jq} "$out/lib/build-closures.jq"
     cp ${mkFloxEnvDerivation_jq} "$out/lib/mkFloxEnvDerivation.jq"

@@ -233,14 +233,15 @@ $manifest.build as $builds |
 # Identify all build runtime closures to be rendered and include them
 # in the list of outputs to render. List all output names as keys in a
 # hash with all empty values as Nix will fill in that part.
-(
-  {
-    "out": {},
-    "develop": {}
-  } * (
-    $builds | with_entries(.value = {})
-  )
-) as $outputs
+### (
+###   {
+###     "out": {},
+###     "develop": {}
+###   } * (
+###     $builds | with_entries(.value = {})
+###   )
+### ) as $outputs
+( [ "out", "develop" ] + ( $builds | keys ) ) as $outputs
 |
 
 # The "inputSrcs" value is just a list of storepaths to be mapped into
@@ -274,38 +275,55 @@ $manifest.build as $builds |
 |
 
 # Emit the final derivation JSON.
-{
-  "name": $name,
-  "outputs": $outputs,
-  "inputSrcs": $inputSrcs,
-# The output paths are based on the sum of the input derivations.
-# This cannot be empty.
-  "inputDrvs": {
-#    "/nix/store/h3i6ryrlnzjrpnlgg3ddya8asv5gk9qk-builder.pl.drv": [
-#      "out"
-#    ],
-#    "/nix/store/lq2vx4dgzlk8qf78mjhp5hd0xmhlm13h-activation-scripts.drv": [
-#      "out"
-#    ],
-#    "/nix/store/wx6lk23w4s4c6cl1swmbn5v0k23pdnr9-stdenv-darwin.drv": [
-#      "out"
-#    ],
-#    "/nix/store/x0aqbimy2ay89xsd239szqhhmvpf8r5v-jq-1.7.drv": [
-#      "bin"
-#    ],
-#    "/nix/store/xwmh3cs9jh4h28hcjh895yxsblxqx4ix-perl-5.38.0.drv": [
-#      "out"
-#    ],
-#    "/nix/store/z9ff5rgsgbz68pdvnl0cn1mgkp82k37k-bash-5.2-p15.drv": [
-#      "out"
-#    ]
-  },
-  "system": $system,
-#  "builder": $builder,
-#  "args": [],
-# Uncomment this to enable debugging.
-  "builder": "/bin/sh",
-#  "args": [ "-x", "-c", "for outputName in \"${!outputs[@]}\"; do export \"$outputName=${outputs[$outputName]}\"; done && \($builder)" ],
-  "args": [ "-x", "-c", "/bin/ls /bin && /bin/pwd && /bin/ls -la && export && \($builder)" ],
-  "env": ( $otherEnv * $envPkgSets )
+### {
+###   "name": $name,
+###   "outputs": $outputs,
+###   "inputSrcs": $inputSrcs,
+###   "inputDrvs": {},
+###   "system": $system,
+### #  "builder": $builder,
+### #  "args": [],
+### # Uncomment this to enable debugging.
+###   "builder": "/bin/sh",
+### #  "args": [ "-x", "-c", "for outputName in \"${!outputs[@]}\"; do export \"$outputName=${outputs[$outputName]}\"; done && \($builder)" ],
+###   "args": [ "-x", "-c", "/bin/ls /bin && /bin/pwd && /bin/ls -la && export && \($builder)" ],
+###   "env": ( $otherEnv * $envPkgSets )
+### }
+
+# Emit the final Nix expression.
+"
+builtins.derivation {
+  name = \"\($name)\";
+  system = \"\($system)\";
+  builder = \"\($builder)\";
+  # args = [ \"-x\" \"-c\" \"source $NIX_ATTRS_SH_FILE && /bin/ls /bin && /bin/pwd && /bin/ls -la && set && for outputName in \"''${!outputs[@]}\"; do export \"$outputName=''${outputs[$outputName]}\"; done && \($builder)\" ];
+
+  outputs = [ \($outputs | map(@json) | join(" ")) ];
+  passAsFile = [ \($envPkgSets | keys | map(@json) | join(" ")) ];
+
+  # inputDrvs = {};
+  # inputSrcs = [ \($inputSrcs | map(@json) | join(" ")) ];
+
+  # Environment variables required by builder.pl.
+  pathsToLink = \"/\";
+  extraPrefix = \"\";
+  checkCollisionContents = \"\";
+  ignoreCollisions = \"\";
+
+  # The various output environment variables, e.g. pkgs, developPkgs, etc.
+  \($envPkgSets | to_entries | map("\(.key)=\(.value|@json);") | join("\n  "))
+
+  # If the special attribute __structuredAttrs is set to true, the
+  # other derivation attributes are serialised in JSON format and
+  # made available to the builder via the file .attrs.json in the
+  # builder’s temporary directory. This obviates the need for
+  # passAsFile since JSON files have no size restrictions, unlike
+  # process environments.
+  __structuredAttrs = true;
+
+  # Do we need these?
+  # activationScripts = @activationScripts@;
+  # manifest = builtins.toPath \"$manifestRealPath\";
+  # paths = with builtins; [ ${storePathArgs[@]} ];
 }
+"

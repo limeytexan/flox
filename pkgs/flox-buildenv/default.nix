@@ -54,7 +54,7 @@
     # Static environment variables
   '');
   builderBash = writers.writeBash "builder.bash" ''
-    set -eux
+    set -eu
     # /bin/cat $NIX_ATTRS_JSON_FILE
     source $NIX_ATTRS_SH_FILE
     export \
@@ -64,14 +64,16 @@
       checkCollisionContents \
       manifest
     for outputName in "''${!outputs[@]}"; do
+      extraVars=
       if [ "$outputName" = "out" ]; then
-        @out@/lib/builder.pl
+        pkgsVar="pkgs"
+        export FLOX_RECURSIVE_LINK=0
       else
         pkgsVar="''${outputName}Pkgs"
-        out="''${outputs[$outputName]}" pkgs="''${!pkgsVar}" \
-          FLOX_RECURSIVE_LINK=1 \
-	  @out@/lib/builder.pl
+        export FLOX_RECURSIVE_LINK=1
       fi
+      out="''${outputs[$outputName]}" pkgs="''${!pkgsVar}" \
+        @out@/lib/builder.pl
     done
   '';
 

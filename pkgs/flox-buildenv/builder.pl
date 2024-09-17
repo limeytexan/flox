@@ -7,7 +7,6 @@ use File::Path;
 use File::Basename;
 use File::Compare;
 use JSON::PP;
-use Data::Dumper; # XXX
 
 STDOUT->autoflush(1);
 
@@ -264,7 +263,6 @@ if (exists $ENV{"pkgsPath"}) {
 
 # Symlink to the packages that have been installed explicitly by the
 # user.
-print STDERR Dumper $pkgs;
 for my $pkg (@{decode_json $pkgs}) {
     for my $path (@{$pkg->{paths}}) {
         addPkg($path,

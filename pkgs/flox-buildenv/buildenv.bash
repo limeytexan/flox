@@ -89,21 +89,15 @@ rm -rf $tmpdir
 
 # Render derivation for building the flox environment.
 # TODO: do this part in Rust.
-declare derivationPath
-derivationPath="$( \
-  $_jq -r -f @out@/lib/mkFloxEnvDerivation.jq \
-    --arg name "$name" \
-    --arg system "@system@" \
-    --arg builder "@out@/lib/builder.bash" \
-    --arg manifestLock "$manifestRealPath" \
-    --arg activationScripts "$activationScripts" \
-    --arg userActivationScripts "$userActivationScripts" \
-    $manifestRealPath | tee /dev/stderr | @nix@/bin/nix-instantiate - )"
-# cat #  $_nix derivation add \
-#)"
-
-# Build the flox environment.
-exec $_nix build -L --no-link --json "$derivationPath"'^*'
+$_jq -r -f @out@/lib/mkFloxEnvDerivation.jq \
+  --arg name "$name" \
+  --arg system "@system@" \
+  --arg builder "@out@/lib/builder.bash" \
+  --arg manifestLock "$manifestRealPath" \
+  --arg activationScripts "$activationScripts" \
+  --arg userActivationScripts "$userActivationScripts" \
+  $manifestRealPath | \
+exec $_nix build -L --no-link --json --file - '^*'
 
 ### # TODO: let buildenv.nix parse the manifest.lock directly
 ### declare -a storePathArgs

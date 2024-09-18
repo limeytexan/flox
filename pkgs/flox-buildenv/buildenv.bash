@@ -46,8 +46,11 @@ if [ $# -ne 1 ]; then
 fi
 
 # Binaries required for the build.
+_cp="@coreutils@/bin/cp"
 _jq="@jq@/bin/jq"
+_mktemp="@coreutils@/bin/mktemp"
 _nix="@nix@/bin/nix --extra-experimental-features nix-command"
+_rm="@coreutils@/bin/rm"
 
 # Identify realpath of the manifest.lock passed as ARGV[0].
 declare manifestRealPath
@@ -61,9 +64,9 @@ source <($_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest
 # Render the (user) activation-scripts package from the manifest.
 # TODO: do this in Rust.
 declare tmpdir
-tmpdir=$(mktemp -d)
+tmpdir=$($_mktemp -d)
 mkdir -p "$tmpdir/activate.d"
-cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
+$_cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
 $_jq -r '
   .manifest.vars |
   to_entries[] |
@@ -74,18 +77,18 @@ $_jq -r '
     .manifest.hook["on-activate"]
   else empty end
 ' $manifestRealPath > $tmpdir/activate.d/hook-on-activate
-[ -s $tmpdir/activate.d/hook-on-activate ] || rm $tmpdir/activate.d/hook-on-activate
+[ -s $tmpdir/activate.d/hook-on-activate ] || $_rm $tmpdir/activate.d/hook-on-activate
 for i in common bash fish tcsh zsh; do
   $_jq -r --arg section $i '
     if (.manifest.profile | has($section)) then
       .manifest.profile[$section]
     else empty end
   ' $manifestRealPath > $tmpdir/activate.d/profile-$i
-  [ -s $tmpdir/activate.d/profile-$i ] || rm $tmpdir/activate.d/profile-$i
+  [ -s $tmpdir/activate.d/profile-$i ] || $_rm $tmpdir/activate.d/profile-$i
 done
 declare userActivationScripts
 userActivationScripts="$($_nix store add-path ${tmpdir})"
-rm -rf $tmpdir
+$_rm -rf $tmpdir
 
 # Render derivation for building the flox environment.
 # TODO: do this part in Rust.
@@ -98,41 +101,3 @@ $_jq -r -f @out@/lib/mkFloxEnvDerivation.jq \
   --arg userActivationScripts "$userActivationScripts" \
   $manifestRealPath | \
 exec $_nix build -L --no-link --json --file - '^*'
-
-### # TODO: let buildenv.nix parse the manifest.lock directly
-### declare -a storePathArgs
-### storePathArgs="$($_jq -r --arg system @system@ '.packages[] | select(.system == $system) | .outputs_to_install[] as $key | .outputs[$key] | "( storePath \(.) )"' "$manifestRealPath")"
-### 
-### { cat <<EOF
-### with import <nixpkgs> {};
-### let buildFloxEnv =
-###   callPackage @out@/lib/buildenv.nix {};
-### in buildFloxEnv {
-###   name = "$name";
-###   activationScripts = @activationScripts@;
-###   manifest = builtins.toPath "$manifestRealPath";
-###   paths = with builtins; [ ${storePathArgs[@]} ];
-### }
-### EOF
-### } | exec \
-###   nix --extra-experimental-features nix-command \
-###     build -L --file - --json --no-link '^*'
-### #} | exec nix-build --no-link -E - --attr all
-
-
-## { cat <<EOF
-## builtins.derivation {
-##   name = "$name";
-##   system = "@system@";
-##   # builder = "@out@/lib/builder.pl";
-##   builder = "/bin/sh";
-##   args = [ "-x" "-c" "/bin/ls /bin && /bin/pwd && /bin/ls -la && export && @out@/lib/builder.pl" ];
-##   # activationScripts = @activationScripts@;
-##   # manifest = builtins.toPath "$manifestRealPath";
-##   # paths = with builtins; [ ${storePathArgs[@]} ];
-## }
-## EOF
-## } | exec @nix@/bin/nix-instantiate -
-#  nix --extra-experimental-features nix-command \
-#    build -L --file - --json --no-link '^*'
-

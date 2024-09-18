@@ -180,7 +180,8 @@ $manifest.build as $builds |
 # Iterate over the list of builds, filtering from the "toplevel" group
 # just those packages included in the "packages" attribute if defined,
 # otherwise just including the entirety of the "toplevel" group.
-( $builds | to_entries[] as $build |
+( if ($buildNames | length) == 0 then {} else (
+  $builds | to_entries[] as $build |
 
   # Come up with the list of candidate package installation names
   # to be installed.
@@ -212,8 +213,9 @@ $manifest.build as $builds |
   {
     "\($build.key)": ( $buildPackages + $activationScriptsPackages )
   }
-) as $buildPackagesHash
+) end ) as $buildPackagesHash
 |
+debug($buildPackagesHash) |
 
 # Construct each of the "pkgs" environment variables consumed by the
 # builder.pl script.
@@ -230,17 +232,8 @@ $manifest.build as $builds |
 ) as $envPkgSets
 |
 
-# Identify all build runtime closures to be rendered and include them
-# in the list of outputs to render. List all output names as keys in a
-# hash with all empty values as Nix will fill in that part.
-### (
-###   {
-###     "out": {},
-###     "develop": {}
-###   } * (
-###     $builds | with_entries(.value = {})
-###   )
-### ) as $outputs
+# Identify all closures to be rendered and include their names in
+# the list of outputs to render.
 ( [ "out", "develop" ] + ( $builds | keys ) ) as $outputs
 |
 
@@ -273,22 +266,6 @@ $manifest.build as $builds |
   "system": $system
 } as $otherEnv
 |
-
-# Emit the final derivation JSON.
-### {
-###   "name": $name,
-###   "outputs": $outputs,
-###   "inputSrcs": $inputSrcs,
-###   "inputDrvs": {},
-###   "system": $system,
-### #  "builder": $builder,
-### #  "args": [],
-### # Uncomment this to enable debugging.
-###   "builder": "/bin/sh",
-### #  "args": [ "-x", "-c", "for outputName in \"${!outputs[@]}\"; do export \"$outputName=${outputs[$outputName]}\"; done && \($builder)" ],
-###   "args": [ "-x", "-c", "/bin/ls /bin && /bin/pwd && /bin/ls -la && export && \($builder)" ],
-###   "env": ( $otherEnv * $envPkgSets )
-### }
 
 # Emit the final Nix expression.
 "

@@ -62,9 +62,13 @@ manifestRealPath="$(@coreutils@/bin/realpath "$1")"
 source <($_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifestRealPath")
 
 # Render the (user) activation-scripts package from the manifest.
+# Make note to create the temporary directory with the same name
+# so that subsequent `nix store add-path` invocations will yield
+# the same path.
 # TODO: do this in Rust.
 declare tmpdir
-tmpdir=$($_mktemp -d)
+_tmpdir=$($_mktemp -d)
+declare tmpdir="$_tmpdir/$name"
 mkdir -p "$tmpdir/activate.d"
 $_cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
 $_jq -r '
@@ -88,7 +92,7 @@ for i in common bash fish tcsh zsh; do
 done
 declare userActivationScripts
 userActivationScripts="$($_nix store add-path ${tmpdir})"
-$_rm -rf $tmpdir
+$_rm -rf $_tmpdir
 
 # Render derivation for building the flox environment.
 # TODO: do this part in Rust.

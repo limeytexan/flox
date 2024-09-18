@@ -104,19 +104,18 @@ function linkenv() {
     echo "$USAGE" >&2
     exit 1
   fi
+  # Create GC root for the store path at $OUT_LINK.
   # Old command using nix-store:
-  # exec @nix@/bin/nix-store --add-root "$OUT_LINK" -r "$STORE_PATH"
-  #
-  # There's no new nix command equivalent, but we can use nix build instead.
-  #
-  # We're also expected to return the store path as a JSON object:
-  #   {"store_path":"/nix/store/f7z7lsh7r69shyfs2vlfgdknp7hz8k1g-floxenv"}
+  # store_path="$(@nix@/bin/nix-store --add-root "$OUT_LINK" -r "$STORE_PATH")"
+  # New command (hack?) using nix build:
   store_path="$(@nix@/bin/nix --extra-experimental-features nix-command \
     build --print-out-paths --out-link "$OUT_LINK" "$STORE_PATH")"
   if [ $? -ne 0 ]; then
     echo "ERROR: failed to link store path" >&2
     exit 1
   fi
+  # We're also expected to return the store path as a JSON object:
+  #   {"store_path":"/nix/store/f7z7lsh7r69shyfs2vlfgdknp7hz8k1g-floxenv"}
   echo "{\"store_path\":\"$store_path\"}"
   exit 0
 }

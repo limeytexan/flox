@@ -2,8 +2,9 @@
 # jq script to generate a Nix derivation for building a Flox environment from
 # a manifest.lock file.
 #
-# This script emits the [experimental] derivation JSON format as described in:
-#   https://github.com/NixOS/nix/blob/master/doc/manual/src/protocols/json/derivation.md
+# This script emits a Nix expression containing a call to builtins.derivation()
+# as described in:
+#   http://www.chriswarbo.net/projects/nixos/bottom_up.html
 #
 
 # Sample manifest.lock:
@@ -215,7 +216,6 @@ $manifest.build as $builds |
   }
 ) end ) as $buildPackagesHash
 |
-debug($buildPackagesHash) |
 
 # Construct each of the "pkgs" environment variables consumed by the
 # builder.pl script.

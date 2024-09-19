@@ -96,11 +96,11 @@ $_rm -rf $_tmpdir
 
 # Render derivation for building the flox environment.
 # TODO: do this part in Rust.
+set -x
 $_jq -r -f @out@/lib/mkFloxEnvDerivation.jq \
   --arg name "$name" \
   --arg system "@system@" \
-  --arg builder "@out@/lib/builder.bash" \
-  --arg manifestLock "$manifestRealPath" \
+  --arg floxBuildenv "@out@" \
   --arg activationScripts "$activationScripts" \
   --arg userActivationScripts "$userActivationScripts" \
   $manifestRealPath | \

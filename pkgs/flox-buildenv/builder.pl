@@ -7,11 +7,23 @@ use File::Path;
 use File::Basename;
 use File::Compare;
 use JSON::PP;
+use Data::Dumper;
 
 STDOUT->autoflush(1);
 
 $SIG{__WARN__} = sub { warn "warning: ", @_ };
 $SIG{__DIE__}  = sub { die "error: ", @_ };
+
+# <flox>
+# Set required ENV variables to avoid warnings.
+$ENV{"pathsToLink"} = "/";
+$ENV{"extraPrefix"} = "";
+$ENV{"ignoreCollisions"} = "0";
+$ENV{"checkCollisionContents"} = "0";
+
+# Global variable to toggle the recursive linking of propagated-build-inputs.
+my $FLOX_RECURSIVE_LINK = 0;
+# </flox>
 
 my $out = $ENV{"out"};
 my $extraPrefix = $ENV{"extraPrefix"};
@@ -216,7 +228,7 @@ sub addPkg {
     # to rely upon walking setup hooks for constructing a long PYTHONPATH
     # during a potentially-unbounded instantiation.
     #
-    if (exists $ENV{'FLOX_RECURSIVE_LINK'} and $ENV{'FLOX_RECURSIVE_LINK'} eq '1') {
+    if ($FLOX_RECURSIVE_LINK) {
         foreach my $propagatedFN (
             "$pkgDir/nix-support/propagated-user-env-packages", "$pkgDir/nix-support/propagated-build-inputs"
         ) {
@@ -249,6 +261,10 @@ sub addPkg {
     # </flox>
 
 }
+
+# <flox>
+if (0) {
+# </flox>
 
 # Read packages list.
 my $pkgs;
@@ -313,3 +329,99 @@ my $manifest = $ENV{"manifest"};
 if ($manifest) {
     symlink($manifest, "$out/manifest") or die "cannot create manifest";
 }
+
+# <flox>
+} else {
+
+    sub buildEnv($$$) {
+        my $envName = shift;
+        my $out = shift;
+        my $pkgs = shift;
+
+        # Symlink to the packages that have been installed explicitly by the
+        # user.
+        for my $pkg (@{$pkgs}) {
+            for my $path (@{$pkg->{paths}}) {
+                addPkg($path,
+                       $ENV{"ignoreCollisions"} eq "1",
+                       $ENV{"checkCollisionContents"} eq "1",
+                       $pkg->{priority})
+                   if -e $path;
+            }
+        }
+
+        # Flox: the remainder of this function is copied from above.
+
+        # Symlink to the packages that have been "propagated" by packages
+        # installed by the user (i.e., package X declares that it wants Y
+        # installed as well).  We do these later because they have a lower
+        # priority in case of collisions.
+        my $priorityCounter = 1000; # don't care about collisions
+        while (scalar(keys %postponed) > 0) {
+            my @pkgDirs = keys %postponed;
+            %postponed = ();
+            foreach my $pkgDir (sort @pkgDirs) {
+                addPkg($pkgDir, 2, $ENV{"checkCollisionContents"} eq "1", $priorityCounter++);
+            }
+        }
+
+        # Create the symlinks.
+        my $nrLinks = 0;
+        foreach my $relName (sort keys %symlinks) {
+            my ($target, $priority) = @{$symlinks{$relName}};
+            my $abs = "$out" . "$extraPrefix" . "/$relName";
+            next unless isInPathsToLink $relName;
+            if ($target eq "") {
+                #print "creating directory $relName\n";
+                mkpath $abs or die "cannot create directory `$abs': $!";
+            } else {
+                #print "creating symlink $relName to $target\n";
+                symlink $target, $abs ||
+                    die "error creating link `$abs': $!";
+                $nrLinks++;
+            }
+        }
+
+        print STDERR "created $nrLinks symlinks in $envName environment\n";
+
+        my $manifest = $ARGV[0];
+        if ($manifest) {
+            symlink($manifest, "$out/manifest.lock") or die "cannot create manifest";
+        } else {
+            die '$ENV{"manifest"} not defined';
+        }
+    }
+
+    # Avoid the use of "pkgs" and "pkgsPath" env variables by instead
+    # directly ingesting the $NIX_ATTRS_JSON_FILE.
+
+    # Ensure the NIX_ATTRS_JSON_FILE is defined.
+    die "NIX_ATTRS_JSON_FILE not defined"
+        unless defined $ENV{"NIX_ATTRS_JSON_FILE"};
+
+    # Read the JSON file.
+    my $json_file = $ENV{"NIX_ATTRS_JSON_FILE"};
+    open my $fh, '<', $json_file or die "Could not open file '$json_file': $!";
+    local $/;  # Enable 'slurp' mode to read the whole file content at once
+    my $json_text = <$fh>;
+    close $fh;
+
+    # Decode the JSON content into a Perl hash.
+    my $json = JSON::PP->new->utf8;
+    my $nix_attrs = $json->decode($json_text);
+    my $outputData = $json->decode($nix_attrs->{"outputData"});
+
+    # Iterate over $nix_attrs->outputs creating the symlink trees.
+    foreach my $output (@{$outputData}) {
+        # Wipe out global state.
+        %done = ();
+        %postponed = ();
+        %symlinks = ();
+        my $envName = $output->{"name"};
+        my $path = $nix_attrs->{"outputs"}{$envName};
+        my $pkgs = $output->{"pkgs"};
+        $FLOX_RECURSIVE_LINK = ( $output->{"recurse"} eq "1" ) ? 1 : 0;
+        buildEnv($envName, $path, $pkgs);
+    }
+}
+# </flox>

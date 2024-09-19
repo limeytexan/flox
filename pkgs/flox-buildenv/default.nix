@@ -52,26 +52,22 @@
   '');
   builderBash = writers.writeBash "builder.bash" ''
     set -eu
-    # /bin/cat $NIX_ATTRS_JSON_FILE
     source $NIX_ATTRS_SH_FILE
-    export \
-      extraPrefix \
-      pathsToLink \
-      ignoreCollisions \
-      checkCollisionContents \
-      manifest
-    for outputName in "''${!outputs[@]}"; do
-      extraVars=
-      if [ "$outputName" = "out" ]; then
-        pkgsVar="pkgs"
-        export FLOX_RECURSIVE_LINK=0
-      else
-        pkgsVar="''${outputName}Pkgs"
-        export FLOX_RECURSIVE_LINK=1
-      fi
-      out="''${outputs[$outputName]}" pkgs="''${!pkgsVar}" \
+    # We do need to explicitly export the manifest.
+    export manifest
+    # @coreutils@/bin/cat $NIX_ATTRS_JSON_FILE
+    #for outputName in "''${!outputs[@]}"; do
+    #  extraVars=
+    #  if [ "$outputName" = "out" ]; then
+    #    pkgsVar="pkgs"
+    #    export FLOX_RECURSIVE_LINK=0
+    #  else
+    #    pkgsVar="''${outputName}Pkgs"
+    #    export FLOX_RECURSIVE_LINK=1
+    #  fi
+    #  out="''${outputs[$outputName]}" pkgs="''${!pkgsVar}" \
         @out@/lib/builder.pl
-    done
+    #done
   '';
 
 in
@@ -90,9 +86,9 @@ in
     substituteAllInPlace "$out/bin/buildenv"
     cp ${pkgdb} "$out/bin/pkgdb"
     substituteAllInPlace "$out/bin/pkgdb"
-    cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
-    (cd $out/lib && exec patch -p2 < ${builder_pl_patch})
-    #cp ${builder_pl} "$out/lib/builder.pl"
+    #cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
+    #(cd $out/lib && exec patch -p2 < ${builder_pl_patch})
+    cp ${builder_pl} "$out/lib/builder.pl"
     chmod +x "$out/lib/builder.pl"
     substituteAllInPlace "$out/lib/builder.pl"
     cp ${builderBash} "$out/lib/builder.bash"

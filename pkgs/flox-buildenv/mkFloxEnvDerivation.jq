@@ -69,8 +69,7 @@
 ( "Usage: jq -f <this file> " +
     "--arg name <name> " +
     "--arg system <system> " +
-    "--arg builder <path> " +
-    "--arg manifestLock <path> " +
+    "--arg floxBuildenv <path> " +
     "--arg activationScripts <path> " +
     "--arg userActivationScripts <path> " +
     "<path/to/manifest.lock>\n" +
@@ -84,16 +83,9 @@ if ($ARGS.named | has("system")) then . else
 end
 |
 
-# Verify we've been called with `--arg builder <builder>`.
-if ($ARGS.named | has("builder")) then . else
-  "ERROR: missing '--arg builder'\n" + $usage
-  | halt_error(1)
-end
-|
-
-# Verify we've been called with `--arg manifestLock <path/to/manifest.lock>`.
-if ($ARGS.named | has("manifestLock")) then . else
-  "ERROR: missing '--arg manifestLock'\n" + $usage
+# Verify we've been called with `--arg floxBuildenv <path>`.
+if ($ARGS.named | has("floxBuildenv")) then . else
+  "ERROR: missing '--arg floxBuildenv'\n" + $usage
   | halt_error(1)
 end
 |
@@ -130,15 +122,15 @@ else . end
 
 # Function for emitting a package set in the format consumed by
 # the builder.pl script.
-def packagesToPkgs($_packages):
-  $_packages | map(
+def packagesToPkgs(_packages):
+  _packages | map(
     .outputs_to_install[] as $output |
     .outputs[$output] as $storePath |
     {
       paths: [ $storePath ],
       priority: .priority
     }
-  ) | @json;
+  );
 
 # We can have nice names for things.
 .packages as $packages |
@@ -221,7 +213,7 @@ $manifest.build as $builds |
 # builder.pl script.
 (
   {
-    "pkgs": packagesToPkgs($outPackages),
+    "outPkgs": packagesToPkgs($outPackages),
     "developPkgs": packagesToPkgs($developPackages),
   } * (
     $buildPackagesHash | with_entries(
@@ -232,9 +224,32 @@ $manifest.build as $builds |
 ) as $envPkgSets
 |
 
-# Identify all closures to be rendered and include their names in
-# the list of outputs to render.
-( [ "out", "develop" ] + ( $builds | keys ) ) as $outputs
+# Construct data sets for each environment to be rendered by the
+# builder.pl script.
+(
+  [
+    {
+      "name": "out",
+      "pkgs": packagesToPkgs($outPackages),
+      "recurse": false
+    },
+    {
+      "name": "develop",
+      "pkgs": packagesToPkgs($developPackages),
+      "recurse": true
+    }
+  ]
++
+  (
+    $buildPackagesHash | to_entries | map(
+      {
+        "name": .key,
+        "pkgs": packagesToPkgs(.value),
+        "recurse": true
+      }
+    )
+  )
+) as $outputData
 |
 
 # The "inputSrcs" value is just a list of storepaths to be mapped into
@@ -250,45 +265,19 @@ $manifest.build as $builds |
 ) as $inputSrcs
 |
 
-# Other required environment variables.
-{
-  "out": "/nix/store/placeholder",
-  "checkCollisionContents": "",
-  "extraPrefix": "",
-  "ignoreCollisions": "",
-  "manifest": $manifestLock,
-  "outputs": ( $outputs | keys | join(" ") ),
-  # "passAsFile" causes stdenv to pass the specified environment variables
-  # as files instead of as strings. This is necessary for large environments.
-  "passAsFile": ( $envPkgSets | keys | join(" ") ),
-  "pathsToLink": "/",
-  "preferLocalBuild": "1",
-  "system": $system
-} as $otherEnv
-|
-
 # Emit the final Nix expression.
 "
 builtins.derivation {
   name = \"\($name)\";
-  system = \"\($system)\";
-  builder = \"\($builder)\";
-  # args = [ \"-x\" \"-c\" \"source $NIX_ATTRS_SH_FILE && /bin/ls /bin && /bin/pwd && /bin/ls -la && set && for outputName in \"''${!outputs[@]}\"; do export \"$outputName=''${outputs[$outputName]}\"; done && \($builder)\" ];
+  system = \"\($system)\"; # builtins.currentSystem?
+  builder = \"\($floxBuildenv)/lib/builder.pl\";
+  # Pass manifest as an argument to the builder.
+  args = [ (/. + \(input_filename)) ];
+  outputs = [ \($outputData | map(.name | @json) | join(" ")) ];
 
-  outputs = [ \($outputs | map(@json) | join(" ")) ];
-  passAsFile = [ \($envPkgSets | keys | map(@json) | join(" ")) ];
-
-  # inputDrvs = {};
-  # inputSrcs = [ \($inputSrcs | map(@json) | join(" ")) ];
-
-  # Environment variables required by builder.pl.
-  pathsToLink = \"/\";
-  extraPrefix = \"\";
-  checkCollisionContents = \"\";
-  ignoreCollisions = \"\";
-
-  # The various output environment variables, e.g. pkgs, developPkgs, etc.
-  \($envPkgSets | to_entries | map("\(.key)=\(.value|@json);") | join("\n  "))
+  # Convert structured data to JSON text. Note that we have to do
+  # this twice in order to pass the data as a single variable.
+  outputData = \($outputData | @json | @json);
 
   # If the special attribute __structuredAttrs is set to true, the
   # other derivation attributes are serialised in JSON format and
@@ -297,10 +286,5 @@ builtins.derivation {
   # passAsFile since JSON files have no size restrictions, unlike
   # process environments.
   __structuredAttrs = true;
-
-  # Do we need these?
-  # activationScripts = @activationScripts@;
-  # manifest = builtins.toPath \"$manifestRealPath\";
-  # paths = with builtins; [ ${storePathArgs[@]} ];
 }
 "

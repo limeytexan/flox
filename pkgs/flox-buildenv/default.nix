@@ -107,5 +107,4 @@ in
     cp ${builderBash} "$out/lib/builder.bash"
     substituteAllInPlace "$out/lib/builder.bash"
     cp ${build_packages_jq} "$out/lib/build-packages.jq"
-    cp ${mkFloxEnvDerivation_jq} "$out/lib/mkFloxEnvDerivation.jq"
   ''

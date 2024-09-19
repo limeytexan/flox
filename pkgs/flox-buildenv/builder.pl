@@ -7,7 +7,6 @@ use File::Path;
 use File::Basename;
 use File::Compare;
 use JSON::PP;
-use Data::Dumper;
 
 STDOUT->autoflush(1);
 
@@ -333,10 +332,10 @@ if ($manifest) {
 # <flox>
 } else {
 
-    my $json = JSON::PP->new->utf8;
     sub parseJSONFile($) {
         my $json_file = shift;
         # Read the JSON file.
+        my $json = JSON::PP->new->utf8;
         open my $fh, '<', $json_file or die "Could not open file '$json_file': $!";
         local $/;  # Enable 'slurp' mode to read the whole file content at once
         my $json_text = <$fh>;

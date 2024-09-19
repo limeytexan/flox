@@ -49,16 +49,36 @@ fi
 _cp="@coreutils@/bin/cp"
 _jq="@jq@/bin/jq"
 _mktemp="@coreutils@/bin/mktemp"
-_nix="@nix@/bin/nix --extra-experimental-features nix-command"
+_nix="@nix@/bin/nix --extra-experimental-features flakes --extra-experimental-features nix-command"
 _rm="@coreutils@/bin/rm"
+_xargs="@findutils@/bin/xargs"
 
 # Nicer name for referring to the manifest.
 declare manifest="$1"
 
 # Build any packages required for the environment that are not already
-# present in the store.
+# present in the store. The build-packages.jq script will output a list
+# of tuples, where the first element is the store path of the package
+# and the second element is the locked flakeref for building the package.
+# We then filter out the store paths that already exist in the store with
+# the `while` loop and build the rest.
 # TODO: do this in Rust.
-source <($_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest")
+$_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
+  declare -a tuple
+  declare -a flakerefs
+  declare impureArg=""
+  while read -ra tuple; do
+    if [ ! -e "x${tuple[0]}" ]; then
+      flakerefs+=("${tuple[1]}")
+      if [ "${tuple[2]}" = "true" ]; then
+        export NIXPKGS_ALLOW_UNFREE=1
+        impureArg="--impure"
+      fi
+    fi
+  done
+  echo "${flakerefs[@]}" | \
+    $_xargs --verbose --no-run-if-empty $_nix build --no-link $impureArg
+)
 
 # Render the (user) activation-scripts package from the manifest.
 # Make note to create the temporary directory with the same name

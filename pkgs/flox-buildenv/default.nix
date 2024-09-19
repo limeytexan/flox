@@ -3,6 +3,7 @@
   cacert,
   darwin,
   coreutils,
+  findutils,
   flox-activation-scripts,
   getopt,
   glibcLocalesUtf8,
@@ -78,6 +79,7 @@ in
   {
     inherit
       coreutils
+      findutils
       getopt
       jq
       nix

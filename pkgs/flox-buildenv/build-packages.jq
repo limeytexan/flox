@@ -74,16 +74,19 @@ if (($system == "x86_64-linux") or ($system == "aarch64-linux") or
 end
 |
 
-# Generate a list of shell commands to build any missing store paths.
+# Generate a list of (storepath,flakeref) tuples representing all
+# store paths used in this environment. This list is then consumed
+# by the calling script to invoke Nix to build any missing packages.
 # TODO: group nix invocations by flake URL and free/unfree status
 #       to maximize the use of the flake cache. Also investigate
 #       nix plugin to allow caching of unfree flake evaluations.
+
 $manifest.packages | map(
   select(.system == $system) |
   .locked_url as $lockedUrl |
   .attr_path as $attrPath |
+  .unfree as $unfree |
   .outputs_to_install[] as $output |
   .outputs[$output] as $storePath |
-  "[ -e \($storePath) ] || " +
-  "nix --extra-experimental-features 'flakes nix-command' build --no-out-link '\($lockedUrl)#\($attrPath)';"
+  "\($storePath) 'git+\($lockedUrl)#\($attrPath)' \($unfree)"
 )[]

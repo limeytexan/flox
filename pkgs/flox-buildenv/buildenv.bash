@@ -52,14 +52,13 @@ _mktemp="@coreutils@/bin/mktemp"
 _nix="@nix@/bin/nix --extra-experimental-features nix-command"
 _rm="@coreutils@/bin/rm"
 
-# Identify realpath of the manifest.lock passed as ARGV[0].
-declare manifestRealPath
-manifestRealPath="$(@coreutils@/bin/realpath "$1")"
+# Nicer name for referring to the manifest.
+declare manifest="$1"
 
 # Build any packages required for the environment that are not already
 # present in the store.
 # TODO: do this in Rust.
-source <($_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifestRealPath")
+source <($_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest")
 
 # Render the (user) activation-scripts package from the manifest.
 # Make note to create the temporary directory with the same name
@@ -75,33 +74,50 @@ $_jq -r '
   .manifest.vars |
   to_entries[] |
   "export \(.key)=\"\(.value)\""
-' $manifestRealPath >> $tmpdir/activate.d/envrc
+' $manifest >> $tmpdir/activate.d/envrc
 $_jq -r '
   if (.manifest.hook | has("on-activate")) then
     .manifest.hook["on-activate"]
   else empty end
-' $manifestRealPath > $tmpdir/activate.d/hook-on-activate
+' $manifest > $tmpdir/activate.d/hook-on-activate
 [ -s $tmpdir/activate.d/hook-on-activate ] || $_rm $tmpdir/activate.d/hook-on-activate
 for i in common bash fish tcsh zsh; do
   $_jq -r --arg section $i '
     if (.manifest.profile | has($section)) then
       .manifest.profile[$section]
     else empty end
-  ' $manifestRealPath > $tmpdir/activate.d/profile-$i
+  ' $manifest > $tmpdir/activate.d/profile-$i
   [ -s $tmpdir/activate.d/profile-$i ] || $_rm $tmpdir/activate.d/profile-$i
 done
 declare userActivationScripts
 userActivationScripts="$($_nix store add-path ${tmpdir})"
 $_rm -rf $_tmpdir
 
+# Calculate output names.
+declare outputs
+outputs="$($_jq -r '( [ "out", "develop" ] + ( .manifest.build | keys | map("build-\(.)") ) ) | map(@json) | join(" ")' $manifest)"
+
 # Render derivation for building the flox environment.
 # TODO: do this part in Rust.
-set -x
-$_jq -r -f @out@/lib/mkFloxEnvDerivation.jq \
-  --arg name "$name" \
-  --arg system "@system@" \
-  --arg floxBuildenv "@out@" \
-  --arg activationScripts "$activationScripts" \
-  --arg userActivationScripts "$userActivationScripts" \
-  $manifestRealPath | \
+( cat <<EOF
+builtins.derivation {
+  name = "$name";
+  system = builtins.currentSystem;
+  builder = "@out@/lib/builder.pl";
+  # Convert the supplied manifest to a store path.
+  manifest = /. + $manifest;
+  outputs = [ $outputs ];
+  # Both of the following are storepaths.
+  activationScripts = $activationScripts;
+  userActivationScripts = $userActivationScripts;
+  # If the special attribute __structuredAttrs is set to true, the
+  # other derivation attributes are serialised in JSON format and
+  # made available to the builder via the file .attrs.json in the
+  # builder’s temporary directory. This obviates the need for
+  # passAsFile since JSON files have no size restrictions, unlike
+  # process environments.
+  __structuredAttrs = true;
+}
+EOF
+) | tee /dev/stderr | \
 exec $_nix build -L --no-link --json --file - '^*'

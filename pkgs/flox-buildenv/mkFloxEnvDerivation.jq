@@ -209,21 +209,6 @@ $manifest.build as $builds |
 ) end ) as $buildPackagesHash
 |
 
-# Construct each of the "pkgs" environment variables consumed by the
-# builder.pl script.
-(
-  {
-    "outPkgs": packagesToPkgs($outPackages),
-    "developPkgs": packagesToPkgs($developPackages),
-  } * (
-    $buildPackagesHash | with_entries(
-      .key += "Pkgs" |
-      .value = packagesToPkgs(.value)
-    )
-  )
-) as $envPkgSets
-|
-
 # Construct data sets for each environment to be rendered by the
 # builder.pl script.
 (
@@ -271,8 +256,7 @@ builtins.derivation {
   name = \"\($name)\";
   system = \"\($system)\"; # builtins.currentSystem?
   builder = \"\($floxBuildenv)/lib/builder.pl\";
-  # Pass manifest as an argument to the builder.
-  args = [ (/. + \(input_filename)) ];
+  manifest = /. + \(input_filename);
   outputs = [ \($outputData | map(.name | @json) | join(" ")) ];
 
   # Convert structured data to JSON text. Note that we have to do

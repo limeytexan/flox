@@ -333,7 +333,141 @@ if ($manifest) {
 # <flox>
 } else {
 
-    sub buildEnv($$$) {
+    my $json = JSON::PP->new->utf8;
+    sub parseJSONFile($) {
+        my $json_file = shift;
+        # Read the JSON file.
+        open my $fh, '<', $json_file or die "Could not open file '$json_file': $!";
+        local $/;  # Enable 'slurp' mode to read the whole file content at once
+        my $json_text = <$fh>;
+        close $fh;
+        # Decode the JSON content into a Perl hash.
+        return $json->decode($json_text);
+    }
+
+    # Process the manifest data to produce an array of package objects
+    # compatible with the "pkgs" variable as found in the original code.
+    sub outputData($$) {
+        my $nix_attrs = shift;
+        my $manifestData = shift;
+
+        # Function for emitting a package set in the format consumed by
+        # the builder.pl script.
+        sub packagesToPkgs($) {
+            my $packages = shift;
+            my @retarray = ();
+            foreach my $package (@{$packages}) {
+                my @storePaths = ();
+                foreach my $output (keys %{$package->{"outputs"}}) {
+                    next unless grep { $_ eq $output } @{$package->{"outputs_to_install"}};
+                    push @storePaths, $package->{"outputs"}{$output};
+                }
+                next unless scalar @storePaths;
+                push @retarray, {
+                    "paths" => \@storePaths,
+                    "priority" => $package->{"priority"}
+                };
+            }
+            return \@retarray;
+        }
+
+        # We can have nice names for things.
+        my $system = $nix_attrs->{"system"};
+        my $activationScripts = $nix_attrs->{"activationScripts"};
+        my $userActivationScripts = $nix_attrs->{"userActivationScripts"};
+        my $packages = $manifestData->{"packages"};
+        my $manifest = $manifestData->{"manifest"};
+        my $install = $manifest->{"install"};
+        my $builds = $manifest->{"build"};
+        my @buildNames = keys %{$builds};
+
+        # Construct an array containing the Flox activation-scripts packages.
+        my @activationScriptsPackages = (
+            {
+                "outputs_to_install" => [ "out" ],
+                "outputs" => {
+                    "out" => $activationScripts
+                },
+                priority => 1
+            },
+            {
+                "outputs_to_install" => [ "out" ],
+                "outputs" => {
+                    "out" => $userActivationScripts
+                },
+                priority => 1
+            },
+        );
+
+        # Filter system-specific outputs to include in the "out" output.
+        my @outPackages = grep { $_->{"system"} eq $system } @{$packages};
+
+        # Define the "develop" output as all packages with activation scripts included.
+        my @developPackages = ( @outPackages, @activationScriptsPackages );
+
+        # Filter only packages included in the "toplevel" group for use in builds.
+        my @toplevelPackages = grep { $_->{"group"} eq "toplevel" } @outPackages;
+
+        my %buildPackagesHash = ();
+        if (scalar @buildNames) {
+            # Each build gets its own output closure including packages
+            # selected from the @toplevelPackages set. If the "packages"
+            # attribute is not defined then the build will use all of
+            # @toplevelPackages.
+            foreach my $build (@buildNames) {
+                # Come up with the list of candidate package installation names
+                # to be installed.
+                if (defined $builds->{$build}{"packages"}) {
+                    my @buildPackageNames = @{$builds->{$build}{"packages"}};
+                    # Derive the corresponding package attr-paths.
+                    my @buildPackageAttrPaths;
+                    foreach my $name (@buildPackageNames) {
+                        if (exists $install->{$name}) {
+                            push @buildPackageAttrPaths, $install->{$name}{"pkg-path"};
+                        }
+                    }
+                    # Filter packages found in the "toplevel" pkg-group to include only
+                    # those packages found in `$buildPackageAttrPaths`.
+                    my @buildPackages;
+                    foreach my $package (@toplevelPackages) {
+                        if (grep { $_ eq $package->{"attr_path"} } @buildPackageAttrPaths) {
+                            push @buildPackages, $package;
+                        }
+                    }
+                    # Represent the result as a hash keyed by the build name.
+                    $buildPackagesHash{$build} = [ @buildPackages, @activationScriptsPackages ];
+                } else {
+                    $buildPackagesHash{$build} = \@toplevelPackages;
+                }
+            }
+        }
+
+        # Construct data sets for each environment to be rendered by the
+        # builder.pl script.
+        my @outputData = (
+            {
+              "name" => "out",
+              "pkgs" => packagesToPkgs(\@outPackages),
+              "recurse" => 0
+            },
+            {
+              "name" => "develop",
+              "pkgs" => packagesToPkgs(\@developPackages),
+              "recurse" => 1
+            }
+        );
+        foreach my $buildName (@buildNames) {
+            push @outputData, {
+                "name" => "build-$buildName",
+                "pkgs" => packagesToPkgs($buildPackagesHash{$buildName}),
+                "recurse" => 1
+            };
+        }
+        return \@outputData;
+    }
+
+    sub buildEnv($$$$) {
+        my $manifest = shift;
         my $envName = shift;
         my $out = shift;
         my $pkgs = shift;
@@ -384,34 +518,20 @@ if ($manifest) {
 
         print STDERR "created $nrLinks symlinks in $envName environment\n";
 
-        my $manifest = $ARGV[0];
-        if ($manifest) {
-            symlink($manifest, "$out/manifest.lock") or die "cannot create manifest";
-        } else {
-            die '$ENV{"manifest"} not defined';
-        }
+        symlink($manifest, "$out/manifest.lock") or die "cannot create manifest";
     }
 
     # Avoid the use of "pkgs" and "pkgsPath" env variables by instead
-    # directly ingesting the $NIX_ATTRS_JSON_FILE.
-
-    # Ensure the NIX_ATTRS_JSON_FILE is defined.
+    # directly reading the $NIX_ATTRS_JSON_FILE.
     die "NIX_ATTRS_JSON_FILE not defined"
         unless defined $ENV{"NIX_ATTRS_JSON_FILE"};
+    my $nix_attrs = parseJSONFile($ENV{"NIX_ATTRS_JSON_FILE"});
+    my $manifestData = parseJSONFile($nix_attrs->{"manifest"});
 
-    # Read the JSON file.
-    my $json_file = $ENV{"NIX_ATTRS_JSON_FILE"};
-    open my $fh, '<', $json_file or die "Could not open file '$json_file': $!";
-    local $/;  # Enable 'slurp' mode to read the whole file content at once
-    my $json_text = <$fh>;
-    close $fh;
+    # Construct outputData from the manifest.
+    my $outputData = outputData($nix_attrs, $manifestData);
 
-    # Decode the JSON content into a Perl hash.
-    my $json = JSON::PP->new->utf8;
-    my $nix_attrs = $json->decode($json_text);
-    my $outputData = $json->decode($nix_attrs->{"outputData"});
-
-    # Iterate over $nix_attrs->outputs creating the symlink trees.
+    # Iterate over $outputData creating the symlink trees.
     foreach my $output (@{$outputData}) {
         # Wipe out global state.
         %done = ();
@@ -421,7 +541,7 @@ if ($manifest) {
         my $path = $nix_attrs->{"outputs"}{$envName};
         my $pkgs = $output->{"pkgs"};
         $FLOX_RECURSIVE_LINK = ( $output->{"recurse"} eq "1" ) ? 1 : 0;
-        buildEnv($envName, $path, $pkgs);
+        buildEnv($nix_attrs->{"manifest"}, $envName, $path, $pkgs);
     }
 }
 # </flox>

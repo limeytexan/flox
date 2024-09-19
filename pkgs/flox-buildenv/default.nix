@@ -39,17 +39,20 @@
   activationScriptsDrv = "FOORBAR";
   builderDrv = "FOOBAR";
   defaultEnvrc = writeText "default.envrc" (''
-    # Default environment variables
-    export SSL_CERT_FILE="''${SSL_CERT_FILE:-${cacert}/etc/ssl/certs/ca-bundle.crt}"
-    export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-''${SSL_CERT_FILE}}"
-  '' + lib.optionalString stdenv.isLinux ''
-    export LOCALE_ARCHIVE="''${LOCALE_ARCHIVE:-${glibcLocalesUtf8}/lib/locale/locale-archive}"
-  '' + lib.optionalString stdenv.isDarwin ''
-    export NIX_COREFOUNDATION_RPATH="''${NIX_COREFOUNDATION_RPATH:-"${darwin.CF}/Library/Frameworks"}"
-    export PATH_LOCALE="''${PATH_LOCALE:-${darwin.locale}/share/locale}"
-  '' + ''
-    # Static environment variables
-  '');
+      # Default environment variables
+      export SSL_CERT_FILE="''${SSL_CERT_FILE:-${cacert}/etc/ssl/certs/ca-bundle.crt}"
+      export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-''${SSL_CERT_FILE}}"
+    ''
+    + lib.optionalString stdenv.isLinux ''
+      export LOCALE_ARCHIVE="''${LOCALE_ARCHIVE:-${glibcLocalesUtf8}/lib/locale/locale-archive}"
+    ''
+    + lib.optionalString stdenv.isDarwin ''
+      export NIX_COREFOUNDATION_RPATH="''${NIX_COREFOUNDATION_RPATH:-"${darwin.CF}/Library/Frameworks"}"
+      export PATH_LOCALE="''${PATH_LOCALE:-${darwin.locale}/share/locale}"
+    ''
+    + ''
+      # Static environment variables
+    '');
   builderBash = writers.writeBash "builder.bash" ''
     set -eu
     source $NIX_ATTRS_SH_FILE
@@ -69,13 +72,23 @@
         @out@/lib/builder.pl
     #done
   '';
-
 in
   runCommandNoCC
   "${pname}-${version}"
   {
-    inherit coreutils getopt jq nix pname version builderBash
-      activationScripts activationScriptsDrv builderDrv defaultEnvrc;
+    inherit
+      coreutils
+      getopt
+      jq
+      nix
+      pname
+      version
+      builderBash
+      activationScripts
+      activationScriptsDrv
+      builderDrv
+      defaultEnvrc
+      ;
     # Substitutions for builder.pl.
     inherit (builtins) storeDir;
     perl = perl + "/bin/perl";

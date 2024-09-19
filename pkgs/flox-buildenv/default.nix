@@ -35,10 +35,7 @@
   builder_pl = ./builder.pl;
   builder_pl_patch = ./builder.pl.patch;
   build_packages_jq = ./build-packages.jq;
-  mkFloxEnvDerivation_jq = ./mkFloxEnvDerivation.jq;
   activationScripts = flox-activation-scripts;
-  activationScriptsDrv = "FOORBAR";
-  builderDrv = "FOOBAR";
   defaultEnvrc = writeText "default.envrc" (''
       # Default environment variables
       export SSL_CERT_FILE="''${SSL_CERT_FILE:-${cacert}/etc/ssl/certs/ca-bundle.crt}"
@@ -54,25 +51,6 @@
     + ''
       # Static environment variables
     '');
-  builderBash = writers.writeBash "builder.bash" ''
-    set -eu
-    source $NIX_ATTRS_SH_FILE
-    # We do need to explicitly export the manifest.
-    export manifest
-    # @coreutils@/bin/cat $NIX_ATTRS_JSON_FILE
-    #for outputName in "''${!outputs[@]}"; do
-    #  extraVars=
-    #  if [ "$outputName" = "out" ]; then
-    #    pkgsVar="pkgs"
-    #    export FLOX_RECURSIVE_LINK=0
-    #  else
-    #    pkgsVar="''${outputName}Pkgs"
-    #    export FLOX_RECURSIVE_LINK=1
-    #  fi
-    #  out="''${outputs[$outputName]}" pkgs="''${!pkgsVar}" \
-        @out@/lib/builder.pl
-    #done
-  '';
 in
   runCommandNoCC
   "${pname}-${version}"
@@ -85,10 +63,7 @@ in
       nix
       pname
       version
-      builderBash
       activationScripts
-      activationScriptsDrv
-      builderDrv
       defaultEnvrc
       ;
     # Substitutions for builder.pl.
@@ -101,12 +76,16 @@ in
     substituteAllInPlace "$out/bin/buildenv"
     cp ${pkgdb} "$out/bin/pkgdb"
     substituteAllInPlace "$out/bin/pkgdb"
-    #cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
-    #(cd $out/lib && exec patch -p2 < ${builder_pl_patch})
+
+    # Uncomment these lines to generate builder.pl from the Nixpkgs source.
+    # cp --no-preserve=mode ${nixpkgsBuildenvRoot}/builder.pl "$out/lib/builder.pl"
+    # (cd $out/lib && exec patch -p2 < ${builder_pl_patch})
+    #
+    # ... but in the meantime, we use a modified version of builder.pl to
+    # make it easier to hack on.
     cp ${builder_pl} "$out/lib/builder.pl"
+
     chmod +x "$out/lib/builder.pl"
     substituteAllInPlace "$out/lib/builder.pl"
-    cp ${builderBash} "$out/lib/builder.bash"
-    substituteAllInPlace "$out/lib/builder.bash"
     cp ${build_packages_jq} "$out/lib/build-packages.jq"
   ''

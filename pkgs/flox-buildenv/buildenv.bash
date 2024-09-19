@@ -68,7 +68,7 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
   declare -a flakerefs
   declare impureArg=""
   while read -ra tuple; do
-    if [ ! -e "x${tuple[0]}" ]; then
+    if [ ! -e "${tuple[0]}" ]; then
       flakerefs+=("${tuple[1]}")
       if [ "${tuple[2]}" = "true" ]; then
         export NIXPKGS_ALLOW_UNFREE=1
@@ -76,6 +76,7 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
       fi
     fi
   done
+  # TODO: drop the --verbose flag below (?)
   echo "${flakerefs[@]}" | \
     $_xargs --verbose --no-run-if-empty $_nix build --no-link $impureArg
 )
@@ -139,5 +140,4 @@ builtins.derivation {
   __structuredAttrs = true;
 }
 EOF
-) | tee /dev/stderr | \
-exec $_nix build -L --no-link --json --file - '^*'
+) | exec $_nix build -L --no-link --json --file - '^*'

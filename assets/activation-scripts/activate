@@ -130,9 +130,9 @@ while true; do
     -c|--command)
       shift
       if [ -z "$1" ]; then
-        echo "Option -c requires an argument." >&2
-        echo "$USAGE" >&2
-        exit 1
+	echo "Option -c requires an argument." >&2
+	echo "$USAGE" >&2
+	exit 1
       fi
       FLOX_CMD="$1"
       shift

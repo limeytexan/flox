@@ -64,10 +64,16 @@ declare manifest="$1"
 # the `while` loop and build the rest.
 # TODO: do this in Rust.
 $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
+
+  # The remainder of this script is executed in a subshell so that variables
+  # derived from the output of the jq script above can be used for subsequent
+  # nix invocations.
   declare -a tuple
+  declare -a inputSrcs
   declare -a flakerefs
   declare impureArg=""
   while read -ra tuple; do
+    inputSrcs+=("${tuple[0]}")
     if [ ! -e "${tuple[0]}" ]; then
       flakerefs+=("${tuple[1]}")
       if [ "${tuple[2]}" = "true" ]; then
@@ -79,58 +85,59 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
   # TODO: drop the --verbose flag below (?)
   echo "${flakerefs[@]}" | \
     $_xargs --verbose --no-run-if-empty $_nix build --no-link $impureArg
-)
 
-# Render the (user) activation-scripts package from the manifest.
-# Make note to create the temporary directory with the same name
-# so that subsequent `nix store add-path` invocations will yield
-# the same path.
-# TODO: do this in Rust.
-declare tmpdir
-_tmpdir=$($_mktemp -d)
-declare tmpdir="$_tmpdir/$name"
-mkdir -p "$tmpdir/activate.d"
-$_cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
-$_jq -r '
-  .manifest.vars |
-  to_entries[] |
-  "export \(.key)=\"\(.value)\""
-' $manifest >> $tmpdir/activate.d/envrc
-$_jq -r '
-  if (.manifest.hook | has("on-activate")) then
-    .manifest.hook["on-activate"]
-  else empty end
-' $manifest > $tmpdir/activate.d/hook-on-activate
-[ -s $tmpdir/activate.d/hook-on-activate ] || $_rm $tmpdir/activate.d/hook-on-activate
-for i in common bash fish tcsh zsh; do
-  $_jq -r --arg section $i '
-    if (.manifest.profile | has($section)) then
-      .manifest.profile[$section]
+  # Render the (user) activation-scripts package from the manifest.
+  # Make note to create the temporary directory with the same name
+  # so that subsequent `nix store add-path` invocations will yield
+  # the same path.
+  # TODO: do this in Rust.
+  declare tmpdir
+  _tmpdir=$($_mktemp -d)
+  declare tmpdir="$_tmpdir/$name"
+  mkdir -p "$tmpdir/activate.d"
+  $_cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
+  $_jq -r '
+    .manifest.vars |
+    to_entries[] |
+    "export \(.key)=\"\(.value)\""
+  ' $manifest >> $tmpdir/activate.d/envrc
+  $_jq -r '
+    if (.manifest.hook | has("on-activate")) then
+      .manifest.hook["on-activate"]
     else empty end
-  ' $manifest > $tmpdir/activate.d/profile-$i
-  [ -s $tmpdir/activate.d/profile-$i ] || $_rm $tmpdir/activate.d/profile-$i
-done
-declare userActivationScripts
-userActivationScripts="$($_nix store add-path ${tmpdir})"
-$_rm -rf $_tmpdir
+  ' $manifest > $tmpdir/activate.d/hook-on-activate
+  [ -s $tmpdir/activate.d/hook-on-activate ] || $_rm $tmpdir/activate.d/hook-on-activate
+  for i in common bash fish tcsh zsh; do
+    $_jq -r --arg section $i '
+      if (.manifest.profile | has($section)) then
+        .manifest.profile[$section]
+      else empty end
+    ' $manifest > $tmpdir/activate.d/profile-$i
+    [ -s $tmpdir/activate.d/profile-$i ] || $_rm $tmpdir/activate.d/profile-$i
+  done
+  declare userActivationScripts
+  userActivationScripts="$($_nix store add-path ${tmpdir})"
+  $_rm -rf $_tmpdir
 
-# Calculate output names.
-declare outputs
-outputs="$($_jq -r '( [ "out", "develop" ] + ( .manifest.build | keys | map("build-\(.)") ) ) | map(@json) | join(" ")' $manifest)"
+  # Calculate output names.
+  declare outputs
+  outputs="$($_jq -r '( [ "out", "develop" ] + ( .manifest.build | keys | map("build-\(.)") ) ) | map(@json) | join(" ")' $manifest)"
 
-# Render derivation for building the flox environment.
-# TODO: do this part in Rust.
-( cat <<EOF
+  # Render derivation for building the flox environment.
+  # TODO: do this part in Rust.
+  ( cat <<EOF
 builtins.derivation {
   name = "$name";
   system = builtins.currentSystem;
   builder = "@out@/lib/builder.pl";
+  outputs = [ $outputs ];
   # Convert the supplied manifest to a store path.
   manifest = /. + $manifest;
-  outputs = [ $outputs ];
   # Both of the following are storepaths.
   activationScripts = $activationScripts;
   userActivationScripts = $userActivationScripts;
+  # Declare all inputs.
+  inputSrcs = map (x: builtins.storePath x) [ @out@ ${inputSrcs[@]} ];
   # If the special attribute __structuredAttrs is set to true, the
   # other derivation attributes are serialised in JSON format and
   # made available to the builder via the file .attrs.json in the
@@ -140,4 +147,6 @@ builtins.derivation {
   __structuredAttrs = true;
 }
 EOF
-) | exec $_nix build -L --no-link --json --file - '^*'
+  ) | exec $_nix build -L --offline --no-link --json --file - '^*'
+
+)

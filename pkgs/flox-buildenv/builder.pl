@@ -517,7 +517,7 @@ if ($manifest) {
 
         print STDERR "created $nrLinks symlinks in $envName environment\n";
 
-        symlink($manifest, "$out/manifest.lock") or die "cannot create manifest";
+        symlink($manifest, "$out/manifest.lock") or die "cannot create manifest: $!";
     }
 
     # Avoid the use of "pkgs" and "pkgsPath" env variables by instead

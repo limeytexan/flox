@@ -85,8 +85,9 @@ $manifest.packages | map(
   select(.system == $system) |
   .locked_url as $lockedUrl |
   .attr_path as $attrPath |
-  .unfree as $unfree |
+  (.unfree // false) as $unfree |
+  (.meta.broken // false) as $broken |
   .outputs_to_install[] as $output |
   .outputs[$output] as $storePath |
-  "\($storePath) 'git+\($lockedUrl)#\($attrPath)' \($unfree)"
+  "\($storePath) 'git+\($lockedUrl)#\($attrPath)' \($unfree) \($broken)"
 )[]

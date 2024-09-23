@@ -18,7 +18,6 @@ OPTSTRING="n:a:"
 
 declare name="floxenv"
 declare activationScripts="@activationScripts@"
-declare activationScriptsDrv="@activationScriptsDrv@"
 while getopts $OPTSTRING opt; do
   case $opt in
     n)
@@ -78,6 +77,10 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
       flakerefs+=("${tuple[1]}")
       if [ "${tuple[2]}" = "true" ]; then
         export NIXPKGS_ALLOW_UNFREE=1
+        impureArg="--impure"
+      fi
+      if [ "${tuple[3]}" = "true" ]; then
+        export NIXPKGS_ALLOW_BROKEN=1
         impureArg="--impure"
       fi
     fi

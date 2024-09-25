@@ -517,7 +517,25 @@ if ($manifest) {
 
         print STDERR "created $nrLinks symlinks in $envName environment\n";
 
-        symlink($manifest, "$out/manifest.lock") or die "cannot create manifest: $!";
+        if ( -e "$out" ) {
+           print STDERR "CONFIRMED that $out exists\n";
+        } else {
+           print STDERR "ERRORR CONFIRMED that $out DOES NOT EXIST\n";
+        }
+        symlink($manifest, "$out/manifest.lock") or die "cannot create manifest";
+
+        # Write sorted requisites to $out/requisites.txt.
+        my $file = "$out/requisites.txt";
+        open(my $fh, '>', $file) or die "Could not open file '$file' $!";
+
+        # Sort the keys and write to the file
+        foreach my $key (sort keys %done) {
+            print $fh "$key\n";
+            system "/nix/store/cvjvd6y6h5253m54b5nnn3h63ayyrqqi-nix-2.18.5/bin/nix-store -qR $key";
+        }
+
+        # Close the file
+        close $fh or die "Could not close file '$file' $!";
     }
 
     # Avoid the use of "pkgs" and "pkgsPath" env variables by instead

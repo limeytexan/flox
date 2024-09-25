@@ -49,6 +49,7 @@ _cp="@coreutils@/bin/cp"
 _jq="@jq@/bin/jq"
 _mktemp="@coreutils@/bin/mktemp"
 _nix="@nix@/bin/nix --extra-experimental-features flakes --extra-experimental-features nix-command"
+_nix_store="@nix@/bin/nix-store"
 _rm="@coreutils@/bin/rm"
 _xargs="@findutils@/bin/xargs"
 
@@ -73,7 +74,7 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
   declare impureArg=""
   while read -ra tuple; do
     inputSrcs+=("${tuple[0]}")
-    if [ ! -e "${tuple[0]}" ]; then
+    if ! $_nix_store -r "${tuple[0]}" >/dev/null 2>&1; then
       flakerefs+=("${tuple[1]}")
       if [ "${tuple[2]}" = "true" ]; then
         export NIXPKGS_ALLOW_UNFREE=1

@@ -53,7 +53,7 @@ while getopts $OPTSTRING opt; do
       ;;
     s)
       serviceConfigYamlPath=$OPTARG
-      extraPkgdbArgs+=(--service-config "$OPTARG")
+      # extraPkgdbArgs+=(--service-config "$OPTARG")
       ;;
     x)
       debug+=1

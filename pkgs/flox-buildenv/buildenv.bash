@@ -19,24 +19,26 @@
 set -eu
 
 declare usage
-usage="Usage: $0 \
+usage="Usage: $0 [-x] \
   [-n <name>] \
   [-a <activation-scripts-pkg>] \
   [-m (nix|pkgdb)] \
   [-s <path/to/service-config.yaml>] \
   <path/to/manifest.lock>
+-x : Enable debugging output.
 -n <name> : The name of the flox environment to render.
 -a <activation-scripts-pkg> : The store path of the activation scripts package.
 -s <path/to/service-config.yaml> : Path to the service configuration file.
 -m (nix|pkgdb) : The method to use for realising packages. Defaults to 'pkgdb'.
 "
 
-OPTSTRING="m:n:a:s:"
+OPTSTRING="m:n:a:s:x"
 
 declare buildMethod="${FLOX_BUILDENV_BUILD_METHOD:-pkgdb}"
 declare name="${FLOX_BUILDENV_BUILD_NAME:-floxenv}"
 declare activationScripts="@activationScripts@"
 declare serviceConfigYamlPath=""
+declare -i debug=0
 while getopts $OPTSTRING opt; do
   case $opt in
     m)
@@ -50,6 +52,9 @@ while getopts $OPTSTRING opt; do
       ;;
     s)
       serviceConfigYamlPath=$OPTARG
+      ;;
+    x)
+      debug+=1
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -203,6 +208,11 @@ function renderManifestPackage {
 # 3. Calculate the output names.
 # 4. Render the derivation for building the flox environment.
 # 5. Build the flox environment.
+
+# Enable debugging output if requested.
+if [ $debug -gt 0 ]; then
+  set -x
+fi
 
 # Realise all packages in the manifest using the selected method.
 declare -a inputSrcs

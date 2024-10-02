@@ -31,17 +31,13 @@ usage="Usage: $0 \
 
 OPTSTRING="m:n:a:"
 
-declare buildMethod="pkgdb"
-declare name="floxenv"
+declare buildMethod="${FLOX_BUILDENV_BUILD_METHOD:-pkgdb}"
+declare name="${FLOX_BUILDENV_BUILD_NAME:-floxenv}"
 declare activationScripts="@activationScripts@"
 while getopts $OPTSTRING opt; do
   case $opt in
     m)
       buildMethod=$OPTARG
-      if [ "$buildMethod" != "nix" ] && [ "$buildMethod" != "pkgdb" ]; then
-	echo $usage >&2
-	exit 1
-      fi
       ;;
     n)
       name=$OPTARG
@@ -62,21 +58,26 @@ done
 
 shift $((OPTIND-1))
 
+# Validate arguments.
 if [ $# -ne 1 ]; then
+  echo $usage >&2
+  exit 1
+fi
+if [ "$buildMethod" != "nix" ] && [ "$buildMethod" != "pkgdb" ]; then
   echo $usage >&2
   exit 1
 fi
 
 # Binaries required for the script.
-_cp="@coreutils@/bin/cp"
-_jq="@jq@/bin/jq"
-_mkdir="@coreutils@/bin/mkdir"
-_mktemp="@coreutils@/bin/mktemp"
-_nix="@nix@/bin/nix --extra-experimental-features flakes --extra-experimental-features nix-command"
-_nix_store="@nix@/bin/nix-store"
-_pkgdb="@floxPkgdb@/bin/pkgdb"
-_rm="@coreutils@/bin/rm"
-_xargs="@findutils@/bin/xargs"
+declare _cp="@coreutils@/bin/cp"
+declare _jq="@jq@/bin/jq"
+declare _mkdir="@coreutils@/bin/mkdir"
+declare _mktemp="@coreutils@/bin/mktemp"
+declare _nix="@nix@/bin/nix --extra-experimental-features flakes --extra-experimental-features nix-command"
+declare _nix_store="@nix@/bin/nix-store"
+declare _pkgdb="@floxPkgdb@/bin/pkgdb"
+declare _rm="@coreutils@/bin/rm"
+declare _xargs="@findutils@/bin/xargs"
 
 # Nicer name for referring to the manifest.
 declare manifest="$1"
@@ -110,15 +111,15 @@ function realiseFlakes {
     while read -ra tuple; do
       inputSrcs+=("${tuple[0]}")
       if ! $_nix_store -r "${tuple[0]}" >/dev/null 2>&1; then
-	flakerefs+=("${tuple[1]}")
-	if [ "${tuple[2]}" = "true" ]; then
-	  export NIXPKGS_ALLOW_UNFREE=1
-	  impureArg="--impure"
-	fi
-	if [ "${tuple[3]}" = "true" ]; then
-	  export NIXPKGS_ALLOW_BROKEN=1
-	  impureArg="--impure"
-	fi
+        flakerefs+=("${tuple[1]}")
+        if [ "${tuple[2]}" = "true" ]; then
+          export NIXPKGS_ALLOW_UNFREE=1
+          impureArg="--impure"
+        fi
+        if [ "${tuple[3]}" = "true" ]; then
+          export NIXPKGS_ALLOW_BROKEN=1
+          impureArg="--impure"
+        fi
       fi
     done
     # Actually kick off the nix build for any missing packages.
@@ -144,7 +145,7 @@ function renderManifestPackage {
   # the same path.
   local _tmpdir
   _tmpdir=$($_mktemp -d --dry-run)
-  local tmpdir="$_tmpdir/$name"
+  local tmpdir="$_tmpdir/$name-manifest"
   TIMEFORMAT='It took %R seconds to render the manifest package files.'
   time {
     $_mkdir -p "$tmpdir/activate.d"
@@ -170,7 +171,7 @@ function renderManifestPackage {
     done
     for i in $($_jq -r '(.manifest.build//{}) | keys[]' $manifest); do
       $_mkdir -p $tmpdir/package-builds.d
-      $_jq -r ".manifest.build.${i}.command" > $tmpdir/package-builds.d/$i
+      $_jq -r ".manifest.build.${i}.command" $manifest > $tmpdir/package-builds.d/$i
     done
     # The following command emits the store path of the manifest package to stdout.
   }
@@ -191,11 +192,14 @@ function renderManifestPackage {
 
 # Realise all packages in the manifest using the selected method.
 declare -a inputSrcs
-if [ "$buildMethod" = "nix" ]; then
-  inputSrcs=("$(realiseFlakes)")
-else
-  inputSrcs=("$(realisePkgdb)")
-fi
+TIMEFORMAT='It took %R seconds to realise the packages.'
+time {
+  if [ "$buildMethod" = "nix" ]; then
+    inputSrcs=("$(realiseFlakes)")
+  else
+    inputSrcs=("$(realisePkgdb)")
+  fi
+}
 
 # Render the manifest package.
 declare manifestPackage
@@ -203,15 +207,20 @@ manifestPackage="$(renderManifestPackage)"
 
 # Calculate output names.
 declare outputs
-outputs="$($_jq -r '
-  (
-    [ "out", "develop" ] +
-    ( (.manifest.build//{}) | keys | map("build-\(.)") )
-  ) | map(@json) | join(" ")
-' $manifest)"
+TIMEFORMAT='It took %R seconds to count the outputs.'
+time {
+  outputs="$($_jq -r '
+    (
+      [ "out", "develop" ] +
+      ( (.manifest.build//{}) | keys | map("build-\(.)") )
+    ) | map(@json) | join(" ")
+  ' $manifest)"
+}
 
 # Render derivation for building the flox environment.
-( cat <<EOF
+TIMEFORMAT='It took %R seconds to render the flox environment outputs.'
+time {
+  cat <<EOF | $_nix build -L --offline --no-link --json --file - '^*'
 builtins.derivation {
   name = "$name";
   system = builtins.currentSystem;
@@ -233,4 +242,4 @@ builtins.derivation {
   __structuredAttrs = true;
 }
 EOF
-) |tee /dev/stderr| exec $_nix build -L --offline --no-link --json --file - '^*'
+}

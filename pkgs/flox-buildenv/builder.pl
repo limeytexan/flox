@@ -520,7 +520,6 @@ if ($manifest) {
         if ( -e "$out" ) {
            print STDERR "CONFIRMED that $out exists\n";
         } else {
-           print STDERR "ERRORR CONFIRMED that $out DOES NOT EXIST\n";
 	   mkdir $out or die "cannot create directory `$out': $!";
         }
         symlink($manifest, "$out/manifest.lock") or die "cannot create manifest";

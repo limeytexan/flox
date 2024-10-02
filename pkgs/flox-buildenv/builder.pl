@@ -373,7 +373,7 @@ if ($manifest) {
         # We can have nice names for things.
         my $system = $nix_attrs->{"system"};
         my $activationScripts = $nix_attrs->{"activationScripts"};
-        my $userActivationScripts = $nix_attrs->{"userActivationScripts"};
+        my $manifestPackage = $nix_attrs->{"manifestPackage"};
         my $packages = $manifestData->{"packages"};
         my $manifest = $manifestData->{"manifest"};
         my $install = $manifest->{"install"};
@@ -381,7 +381,7 @@ if ($manifest) {
         my @buildNames = keys %{$builds};
 
         # Construct an array containing the Flox activation-scripts packages.
-        my @activationScriptsPackages = (
+        my @floxEnvironmentPackages = (
             {
                 "outputs_to_install" => [ "out" ],
                 "outputs" => {
@@ -392,7 +392,7 @@ if ($manifest) {
             {
                 "outputs_to_install" => [ "out" ],
                 "outputs" => {
-                    "out" => $userActivationScripts
+                    "out" => $manifestPackage
                 },
                 priority => 1
             },
@@ -402,7 +402,7 @@ if ($manifest) {
         my @outPackages = grep { $_->{"system"} eq $system } @{$packages};
 
         # Define the "develop" output as all packages with activation scripts included.
-        my @developPackages = ( @outPackages, @activationScriptsPackages );
+        my @developPackages = ( @outPackages, @floxEnvironmentPackages );
 
         # Filter only packages included in the "toplevel" group for use in builds.
         my @toplevelPackages = grep { $_->{"group"} eq "toplevel" } @outPackages;
@@ -434,7 +434,7 @@ if ($manifest) {
                         }
                     }
                     # Represent the result as a hash keyed by the build name.
-                    $buildPackagesHash{$build} = [ @buildPackages, @activationScriptsPackages ];
+                    $buildPackagesHash{$build} = [ @buildPackages, @floxEnvironmentPackages ];
                 } else {
                     $buildPackagesHash{$build} = \@toplevelPackages;
                 }

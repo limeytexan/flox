@@ -10,16 +10,39 @@
 #   buildenv \
 #     [ -n <name> ] \
 #     [ -a <activation-scripts-pkg> ] \
+#     [ -m (nix|pkgdb) ] \
 #     <path/to/manifest.lock>
+#   -n <name> : The name of the flox environment to render.
+#   -a <activation-scripts-pkg> : The store path of the activation scripts package.
+#   -m (nix|pkgdb) : The method to use for realising packages. Defaults to "pkgdb".
 
 set -eu
 
-OPTSTRING="n:a:"
+declare usage
+usage="Usage: $0 \
+  [-n <name>] \
+  [-a <activation-scripts-pkg>] \
+  [-m (nix|pkgdb)] \
+  <path/to/manifest.lock>
+-n <name> : The name of the flox environment to render.
+-a <activation-scripts-pkg> : The store path of the activation scripts package.
+-m (nix|pkgdb) : The method to use for realising packages. Defaults to 'pkgdb'.
+"
 
+OPTSTRING="m:n:a:"
+
+declare buildMethod="pkgdb"
 declare name="floxenv"
 declare activationScripts="@activationScripts@"
 while getopts $OPTSTRING opt; do
   case $opt in
+    m)
+      buildMethod=$OPTARG
+      if [ "$buildMethod" != "nix" ] && [ "$buildMethod" != "pkgdb" ]; then
+	echo $usage >&2
+	exit 1
+      fi
+      ;;
     n)
       name=$OPTARG
       ;;
@@ -40,11 +63,11 @@ done
 shift $((OPTIND-1))
 
 if [ $# -ne 1 ]; then
-  echo "Usage: $0 [-n <name>] [-a <activation-scripts-pkg>] <path/to/manifest.lock>" >&2
+  echo $usage >&2
   exit 1
 fi
 
-# Binaries required for the build.
+# Binaries required for the script.
 _cp="@coreutils@/bin/cp"
 _jq="@jq@/bin/jq"
 _mkdir="@coreutils@/bin/mkdir"
@@ -58,92 +81,137 @@ _xargs="@findutils@/bin/xargs"
 # Nicer name for referring to the manifest.
 declare manifest="$1"
 
-# Build any packages required for the environment that are not already
-# present in the store. The build-packages.jq script will output a list
-# of tuples, where the first element is the store path of the package
-# and the second element is the locked flakeref for building the package.
-# We then filter out the store paths that already exist in the store with
-# the `while` loop and build the rest.
-# TODO: do this in Rust.
-$_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
-  # The remainder of this script is executed in a subshell so that variables
-  # derived from the output of the jq script above can be used for subsequent
-  # nix invocations.
-  declare -a tuple
-  declare -a inputSrcs
-  declare -a flakerefs
-  declare impureArg=""
-  declare pkgdbRealise=1
-  while read -ra tuple; do
-    inputSrcs+=("${tuple[0]}")
-    if [ -z "$pkgdbRealise" ]; then # if ! $_nix_store -r "${tuple[0]}" >/dev/null 2>&1; then
-      flakerefs+=("${tuple[1]}")
-      if [ "${tuple[2]}" = "true" ]; then
-        export NIXPKGS_ALLOW_UNFREE=1
-        impureArg="--impure"
-      fi
-      if [ "${tuple[3]}" = "true" ]; then
-        export NIXPKGS_ALLOW_BROKEN=1
-        impureArg="--impure"
-      fi
-    fi
-  done
+# Function for realising packages using legacy pkgdb. Returns the "array"
+# of [one] store path to be used in the derivation's inputSrcs.
+function realisePkgdb {
+  # Perform the legacy pkgdb buildenv, knowing that it will materialize
+  # all packages in the manifest, and return the [one] env that it creates
+  # to be used in the inputSrcs array of the derivation.
+  $_pkgdb buildenv "$manifest" | $_jq -r .store_path
+}
 
-  if [ -n "$pkgdbRealise" ]; then
-    # Perform the legacy pkgdb buildenv, knowing that it will materialize
-    # all packages in the manifest, but ignore the env that it creates by
-    # redirecting stdout to stderr.
-    inputSrcs+=($_pkgdb buildenv "$manifest" | $_jq .store_path)
-  else
+# Function for realising packages using flakes. Returns the array of store
+# paths to be used in the derivation's inputSrcs. We don't use this at present
+# because it is significantly slower than the legacy pkgdb method, but including
+# it here for reference.
+function realiseFlakes {
+  # Build any packages required for the environment that are not already
+  # present in the store. The build-packages.jq script will output a list
+  # of tuples, where the first element is the store path of the package
+  # the second element is the locked flakeref for building the package,
+  # and the third and fourth elements are booleans indicating whether the
+  # package is unfree or broken, respectively. We then filter out the store
+  # paths that already exist in the store and build the rest.
+  $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
+    local -a tuple
+    local -a flakerefs
+    local -a inputSrcs
+    local impureArg=""
+    while read -ra tuple; do
+      inputSrcs+=("${tuple[0]}")
+      if ! $_nix_store -r "${tuple[0]}" >/dev/null 2>&1; then
+	flakerefs+=("${tuple[1]}")
+	if [ "${tuple[2]}" = "true" ]; then
+	  export NIXPKGS_ALLOW_UNFREE=1
+	  impureArg="--impure"
+	fi
+	if [ "${tuple[3]}" = "true" ]; then
+	  export NIXPKGS_ALLOW_BROKEN=1
+	  impureArg="--impure"
+	fi
+      fi
+    done
+    # Actually kick off the nix build for any missing packages.
     # TODO: drop the --verbose flag below (?)
     echo "${flakerefs[@]}" | \
       $_xargs --verbose --no-run-if-empty $_nix build --no-link $impureArg
-  fi
+    # Return all inputSrcs store paths as a space-separated string.
+    echo "${inputSrcs[@]}"
+  )
+}
 
-  # Render the (user) activation-scripts package from the manifest.
+# Function for rendering the "manifest" package from the manifest.lock file.
+# This package includes all of those "activate.d" and "package-builds.d" scripts
+# previously rendered to different packages, as well as the `service-config.yaml`
+# file that with pkgdb is [incorrectly] being rendered to the flox environment
+# package itself.
+function renderManifestPackage {
+  # Render the manifest package from the manifest. This is the expensive
+  # part - capture the precise duration of the rendering process to get
+  # an idea of how much time we can save by rendering this in Rust.
   # Make note to create the temporary directory with the same name
   # so that subsequent `nix store add-path` invocations will yield
   # the same path.
-  # TODO: do this in Rust.
-  declare tmpdir
-  _tmpdir=$($_mktemp -d)
-  declare tmpdir="$_tmpdir/$name"
-  $_mkdir -p "$tmpdir/activate.d"
-  $_cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
-  $_jq -r '
-    ( .manifest.vars // {} ) |
-    to_entries[] |
-    "export \(.key)=\"\(.value)\""
-  ' $manifest >> $tmpdir/activate.d/envrc
-  $_jq -r '
-    if ( ( .manifest.hook // {} ) | has("on-activate")) then
-      .manifest.hook["on-activate"]
-    else empty end
-  ' $manifest > $tmpdir/activate.d/hook-on-activate
-  [ -s $tmpdir/activate.d/hook-on-activate ] || $_rm $tmpdir/activate.d/hook-on-activate
-  for i in common bash fish tcsh zsh; do
-    $_jq -r --arg section $i '
-      if ( ( .manifest.profile // {} ) | has($section)) then
-        .manifest.profile[$section]
+  local _tmpdir
+  _tmpdir=$($_mktemp -d --dry-run)
+  local tmpdir="$_tmpdir/$name"
+  TIMEFORMAT='It took %R seconds to render the manifest package files.'
+  time {
+    $_mkdir -p "$tmpdir/activate.d"
+    $_cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
+    $_jq -r '
+      (.manifest.vars//{}) |
+      to_entries[] |
+      "export \(.key)=\"\(.value)\""
+    ' $manifest >> $tmpdir/activate.d/envrc
+    $_jq -r '
+      if ( (.manifest.hook//{}) | has("on-activate")) then
+        .manifest.hook["on-activate"]
       else empty end
-    ' $manifest > $tmpdir/activate.d/profile-$i
-    [ -s $tmpdir/activate.d/profile-$i ] || $_rm $tmpdir/activate.d/profile-$i
-  done
-  for i in $($_jq -r '( .manifest.build // {} ) | keys'); do
-    $_mkdir -p $tmpdir/package-builds.d
-    $_jq -r ".manifest.build.${i}.command" > $tmpdir/package-builds.d/$i
-  done
-  declare userActivationScripts
-  userActivationScripts="$($_nix store add-path ${tmpdir})"
+    ' $manifest > $tmpdir/activate.d/hook-on-activate
+    [ -s $tmpdir/activate.d/hook-on-activate ] || $_rm $tmpdir/activate.d/hook-on-activate
+    for i in common bash fish tcsh zsh; do
+      $_jq -r --arg section $i '
+        if ( (.manifest.profile//{}) | has($section)) then
+          .manifest.profile[$section]
+        else empty end
+      ' $manifest > $tmpdir/activate.d/profile-$i
+      [ -s $tmpdir/activate.d/profile-$i ] || $_rm $tmpdir/activate.d/profile-$i
+    done
+    for i in $($_jq -r '(.manifest.build//{}) | keys[]' $manifest); do
+      $_mkdir -p $tmpdir/package-builds.d
+      $_jq -r ".manifest.build.${i}.command" > $tmpdir/package-builds.d/$i
+    done
+    # The following command emits the store path of the manifest package to stdout.
+  }
+  TIMEFORMAT='It took %R seconds to add the manifest package to the store.'
+  time {
+    $_nix store add-path ${tmpdir}
+  }
   $_rm -rf $_tmpdir
+}
 
-  # Calculate output names.
-  declare outputs
-  outputs="$($_jq -r '( [ "out", "develop" ] + ( ( .manifest.build // {} ) | keys | map("build-\(.)") ) ) | map(@json) | join(" ")' $manifest)"
+# main()
+#
+# 1. Realise all packages in the manifest.
+# 2. Render the manifest package.
+# 3. Calculate the output names.
+# 4. Render the derivation for building the flox environment.
+# 5. Build the flox environment.
 
-  # Render derivation for building the flox environment.
-  # TODO: do this part in Rust.
-  ( cat <<EOF
+# Realise all packages in the manifest using the selected method.
+declare -a inputSrcs
+if [ "$buildMethod" = "nix" ]; then
+  inputSrcs=("$(realiseFlakes)")
+else
+  inputSrcs=("$(realisePkgdb)")
+fi
+
+# Render the manifest package.
+declare manifestPackage
+manifestPackage="$(renderManifestPackage)"
+
+# Calculate output names.
+declare outputs
+outputs="$($_jq -r '
+  (
+    [ "out", "develop" ] +
+    ( (.manifest.build//{}) | keys | map("build-\(.)") )
+  ) | map(@json) | join(" ")
+' $manifest)"
+
+# Render derivation for building the flox environment.
+( cat <<EOF
 builtins.derivation {
   name = "$name";
   system = builtins.currentSystem;
@@ -153,7 +221,7 @@ builtins.derivation {
   manifest = /. + $manifest;
   # Both of the following are storepaths.
   activationScripts = $activationScripts;
-  userActivationScripts = $userActivationScripts;
+  manifestPackage = $manifestPackage;
   # Declare all inputs.
   inputSrcs = map (x: builtins.storePath x) [ @out@ ${inputSrcs[@]} ];
   # If the special attribute __structuredAttrs is set to true, the
@@ -165,6 +233,4 @@ builtins.derivation {
   __structuredAttrs = true;
 }
 EOF
-  ) | exec $_nix build -L --offline --no-link --json --file - '^*'
-
-)
+) |tee /dev/stderr| exec $_nix build -L --offline --no-link --json --file - '^*'

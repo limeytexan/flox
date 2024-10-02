@@ -3,6 +3,7 @@
 use strict;
 use Cwd 'abs_path';
 use IO::Handle;
+use File::Copy;
 use File::Path;
 use File::Basename;
 use File::Compare;
@@ -466,10 +467,13 @@ if ($manifest) {
     }
 
     sub buildEnv($$$$) {
-        my $manifest = shift;
+        my $nix_attrs = shift;
         my $envName = shift;
         my $out = shift;
         my $pkgs = shift;
+
+        my $manifest = $nix_attrs->{"manifest"};
+        my $pkgdbDevelopPackage = $nix_attrs->{"pkgdbDevelopPackage"};
 
         # Symlink to the packages that have been installed explicitly by the
         # user.
@@ -518,24 +522,21 @@ if ($manifest) {
         print STDERR "created $nrLinks symlinks in $envName environment\n";
 
         if ( -e "$out" ) {
-           print STDERR "CONFIRMED that $out exists\n";
+            print STDERR "CONFIRMED that $out exists\n";
         } else {
-	   mkdir $out or die "cannot create directory `$out': $!";
-        }
-        symlink($manifest, "$out/manifest.lock") or die "cannot create manifest";
-
-        # Write sorted requisites to $out/requisites.txt.
-        my $file = "$out/requisites.txt";
-        open(my $fh, '>', $file) or die "Could not open file '$file' $!";
-
-        # Sort the keys and write to the file
-        foreach my $key (sort keys %done) {
-            print $fh "$key\n";
-            system "/nix/store/cvjvd6y6h5253m54b5nnn3h63ayyrqqi-nix-2.18.5/bin/nix-store -qR $key";
+	    mkdir $out or die "cannot create directory `$out': $!";
         }
 
-        # Close the file
-        close $fh or die "Could not close file '$file' $!";
+        unless ( -e "$out/manifest.lock" ) {
+            symlink($manifest, "$out/manifest.lock") or die "cannot create \$out/manifest.lock: $!";
+        }
+
+	if ( $envName eq "develop" and $pkgdbDevelopPackage ne "" ) {
+	    # Copy $pkgdbDevelopPackage/requisites.txt to $out.
+	    if ( -e "$pkgdbDevelopPackage/requisites.txt" ) {
+	        copy("$pkgdbDevelopPackage/requisites.txt", "$out/requisites.txt") or die "copy failed: $!";
+            }
+        }
     }
 
     # Avoid the use of "pkgs" and "pkgsPath" env variables by instead
@@ -558,7 +559,7 @@ if ($manifest) {
         my $path = $nix_attrs->{"outputs"}{$envName};
         my $pkgs = $output->{"pkgs"};
         $FLOX_RECURSIVE_LINK = ( $output->{"recurse"} eq "1" ) ? 1 : 0;
-        buildEnv($nix_attrs->{"manifest"}, $envName, $path, $pkgs);
+        buildEnv($nix_attrs, $envName, $path, $pkgs);
     }
 }
 # </flox>

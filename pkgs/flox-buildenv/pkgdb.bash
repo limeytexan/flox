@@ -20,18 +20,18 @@ function buildenv() {
   # Use eval to remove quotes and replace them with spaces.
   eval set -- "$PARSED"
   # Set default values for options.
-  local BUILD_CONTAINER=false
-  local SERVICE_CONFIG=
+  local buildContainer=false
+  local serviceConfigYamlPath=""
   while true; do
     case "$1" in
       --container)
-        BUILD_CONTAINER=true
+        buildContainer=true
         echo "ERROR: option --container is not supported" >&2
         exit 1
         ;;
       --service-config)
         shift
-        SERVICE_CONFIG="$1"
+        serviceConfigYamlPath="$1"
         shift
         break
         ;;
@@ -52,7 +52,7 @@ function buildenv() {
   #   [{"drvPath":"/nix/store/lv7c3qnzkbvmj5sg26qbsxbbwxqsh19g-floxenv.drv","outputs":{"develop":"/nix/store/zy6r86vp164qnll9n3l02yqn7qz92yhx-floxenv-develop","out":"/nix/store/f7z7lsh7r69shyfs2vlfgdknp7hz8k1g-floxenv"}}]
   #
   # For now, use jq to report the "develop" output path as the "store_path".
-  @out@/bin/buildenv "$@" | @jq@/bin/jq -r -M -c '.[0] | {"store_path": .outputs.develop}'
+  @out@/bin/buildenv -s "$serviceConfigYamlPath" "$@" | @jq@/bin/jq -r -M -c '.[0] | {"store_path": .outputs.develop}'
   exit 0
 }
 

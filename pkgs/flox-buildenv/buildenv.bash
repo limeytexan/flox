@@ -38,6 +38,7 @@ declare buildMethod="${FLOX_BUILDENV_BUILD_METHOD:-pkgdb}"
 declare name="${FLOX_BUILDENV_BUILD_NAME:-floxenv}"
 declare activationScripts="@activationScripts@"
 declare serviceConfigYamlPath=""
+declare -a extraPkgdbArgs=()
 declare -i debug=0
 while getopts $OPTSTRING opt; do
   case $opt in
@@ -52,6 +53,7 @@ while getopts $OPTSTRING opt; do
       ;;
     s)
       serviceConfigYamlPath=$OPTARG
+      extraPkgdbArgs+=(--service-config "$OPTARG")
       ;;
     x)
       debug+=1
@@ -103,7 +105,7 @@ function realisePkgdb {
   # Perform the legacy pkgdb buildenv, knowing that it will materialize
   # all packages in the manifest, and return the [one] env that it creates
   # to be used in the inputSrcs array of the derivation.
-  $_pkgdb buildenv "$manifest" | $_jq -r .store_path
+  $_pkgdb buildenv "$manifest" ${extraPkgdbArgs[@]} | $_jq -r .store_path
 }
 
 # Function for realising packages using flakes. Returns the array of store

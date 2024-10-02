@@ -5,6 +5,7 @@
   coreutils,
   findutils,
   flox-activation-scripts,
+  flox-pkgdb,
   getopt,
   glibcLocalesUtf8,
   gnused,
@@ -69,6 +70,7 @@ in
     # Substitutions for builder.pl.
     inherit (builtins) storeDir;
     perl = perl + "/bin/perl";
+    floxPkgdb = flox-pkgdb;
   }
   ''
     mkdir -p "$out/bin" "$out/lib"

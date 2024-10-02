@@ -47,9 +47,11 @@ fi
 # Binaries required for the build.
 _cp="@coreutils@/bin/cp"
 _jq="@jq@/bin/jq"
+_mkdir="@coreutils@/bin/mkdir"
 _mktemp="@coreutils@/bin/mktemp"
 _nix="@nix@/bin/nix --extra-experimental-features flakes --extra-experimental-features nix-command"
 _nix_store="@nix@/bin/nix-store"
+_pkgdb="@floxPkgdb@/bin/pkgdb"
 _rm="@coreutils@/bin/rm"
 _xargs="@findutils@/bin/xargs"
 
@@ -64,7 +66,6 @@ declare manifest="$1"
 # the `while` loop and build the rest.
 # TODO: do this in Rust.
 $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
-
   # The remainder of this script is executed in a subshell so that variables
   # derived from the output of the jq script above can be used for subsequent
   # nix invocations.
@@ -72,9 +73,10 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
   declare -a inputSrcs
   declare -a flakerefs
   declare impureArg=""
+  declare pkgdbRealise=1
   while read -ra tuple; do
     inputSrcs+=("${tuple[0]}")
-    if ! $_nix_store -r "${tuple[0]}" >/dev/null 2>&1; then
+    if [ -z "$pkgdbRealise" ]; then # if ! $_nix_store -r "${tuple[0]}" >/dev/null 2>&1; then
       flakerefs+=("${tuple[1]}")
       if [ "${tuple[2]}" = "true" ]; then
         export NIXPKGS_ALLOW_UNFREE=1
@@ -86,9 +88,17 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
       fi
     fi
   done
-  # TODO: drop the --verbose flag below (?)
-  echo "${flakerefs[@]}" | \
-    $_xargs --verbose --no-run-if-empty $_nix build --no-link $impureArg
+
+  if [ -n "$pkgdbRealise" ]; then
+    # Perform the legacy pkgdb buildenv, knowing that it will materialize
+    # all packages in the manifest, but ignore the env that it creates by
+    # redirecting stdout to stderr.
+    inputSrcs+=($_pkgdb buildenv "$manifest" | $_jq .store_path)
+  else
+    # TODO: drop the --verbose flag below (?)
+    echo "${flakerefs[@]}" | \
+      $_xargs --verbose --no-run-if-empty $_nix build --no-link $impureArg
+  fi
 
   # Render the (user) activation-scripts package from the manifest.
   # Make note to create the temporary directory with the same name
@@ -98,26 +108,30 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
   declare tmpdir
   _tmpdir=$($_mktemp -d)
   declare tmpdir="$_tmpdir/$name"
-  mkdir -p "$tmpdir/activate.d"
+  $_mkdir -p "$tmpdir/activate.d"
   $_cp --no-preserve=mode "@defaultEnvrc@" $tmpdir/activate.d/envrc
   $_jq -r '
-    .manifest.vars |
+    ( .manifest.vars // {} ) |
     to_entries[] |
     "export \(.key)=\"\(.value)\""
   ' $manifest >> $tmpdir/activate.d/envrc
   $_jq -r '
-    if (.manifest.hook | has("on-activate")) then
+    if ( ( .manifest.hook // {} ) | has("on-activate")) then
       .manifest.hook["on-activate"]
     else empty end
   ' $manifest > $tmpdir/activate.d/hook-on-activate
   [ -s $tmpdir/activate.d/hook-on-activate ] || $_rm $tmpdir/activate.d/hook-on-activate
   for i in common bash fish tcsh zsh; do
     $_jq -r --arg section $i '
-      if (.manifest.profile | has($section)) then
+      if ( ( .manifest.profile // {} ) | has($section)) then
         .manifest.profile[$section]
       else empty end
     ' $manifest > $tmpdir/activate.d/profile-$i
     [ -s $tmpdir/activate.d/profile-$i ] || $_rm $tmpdir/activate.d/profile-$i
+  done
+  for i in $($_jq -r '( .manifest.build // {} ) | keys'); do
+    $_mkdir -p $tmpdir/package-builds.d
+    $_jq -r ".manifest.build.${i}.command" > $tmpdir/package-builds.d/$i
   done
   declare userActivationScripts
   userActivationScripts="$($_nix store add-path ${tmpdir})"
@@ -125,7 +139,7 @@ $_jq -r --arg system @system@ -f @out@/lib/build-packages.jq "$manifest" | (
 
   # Calculate output names.
   declare outputs
-  outputs="$($_jq -r '( [ "out", "develop" ] + ( .manifest.build | keys | map("build-\(.)") ) ) | map(@json) | join(" ")' $manifest)"
+  outputs="$($_jq -r '( [ "out", "develop" ] + ( ( .manifest.build // {} ) | keys | map("build-\(.)") ) ) | map(@json) | join(" ")' $manifest)"
 
   # Render derivation for building the flox environment.
   # TODO: do this part in Rust.

@@ -251,8 +251,8 @@ builtins.derivation {
   # Convert the supplied manifest to a store path.
   manifest = /. + $manifest;
   # Both of the following are storepaths.
-  activationScripts = $activationScripts;
-  manifestPackage = $manifestPackage;
+  activationScripts = builtins.storePath $activationScripts;
+  manifestPackage = builtins.storePath $manifestPackage;
   # Declare all inputs.
   inputSrcs = map (x: builtins.storePath x) [ @out@ ${inputSrcs[@]} ];
   # If the special attribute __structuredAttrs is set to true, the

@@ -473,7 +473,6 @@ if ($manifest) {
         my $pkgs = shift;
 
         my $manifest = $nix_attrs->{"manifest"};
-        my $pkgdbDevelopPackage = $nix_attrs->{"pkgdbDevelopPackage"};
 
         # Symlink to the packages that have been installed explicitly by the
         # user.
@@ -527,15 +526,23 @@ if ($manifest) {
 	    mkdir $out or die "cannot create directory `$out': $!";
         }
 
+        # The manifest.lock file should be included in the manifest package, but
+        # if not then take this final opportunity to link it into place.
         unless ( -e "$out/manifest.lock" ) {
             symlink($manifest, "$out/manifest.lock") or die "cannot create \$out/manifest.lock: $!";
         }
 
-	if ( $envName eq "develop" and $pkgdbDevelopPackage ne "" ) {
-	    # Copy $pkgdbDevelopPackage/requisites.txt to $out.
-	    if ( -e "$pkgdbDevelopPackage/requisites.txt" ) {
-	        copy("$pkgdbDevelopPackage/requisites.txt", "$out/requisites.txt") or die "copy failed: $!";
+        # Write sorted requisites to $out/requisites.txt.
+	if ( $envName eq "develop" ) {
+            my $file = "$out/requisites.txt";
+            open(my $fh, '>', $file) or die "Could not open file '$file' $!";
+
+            # Sort the keys and write to the file
+            foreach my $key (sort keys %done) {
+                print $fh "$key\n";
             }
+            # Close the file
+            close $fh or die "Could not close file '$file' $!";
         }
     }
 

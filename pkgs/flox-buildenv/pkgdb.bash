@@ -8,7 +8,7 @@ set -eu
 declare NAME="$0"
 
 function buildenv() {
-  local OPTIONS=
+  local OPTIONS=x
   local LONGOPTS=container,service-config:
   local USAGE="Usage: $NAME buildenv [ --container ] [ --service-config <path> ]"
   local PARSED=$("@getopt@/bin/getopt" --options="$OPTIONS" --longoptions="$LONGOPTS" --name "$NAME" -- "$@")
@@ -33,7 +33,10 @@ function buildenv() {
         shift
         serviceConfigYamlPath="$1"
         shift
-        break
+        ;;
+      -x)
+        shift
+        set -x
         ;;
       --)
         shift

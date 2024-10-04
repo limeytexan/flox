@@ -4,7 +4,6 @@
 }:
 
 let
-
   # A helpful library function copied from nixpkgs/lib/attrsets.nix.
   foldlAttrs = f: init: set:
     builtins.foldl'
@@ -16,28 +15,55 @@ let
   manifestLockData = builtins.fromJSON (builtins.readFile manifest);
   manifestData = manifestLockData.manifest;
 
-  manifestPackage =
-    let
-      envrc = builtins.storePath defaultEnvrc;
-      vars = if (builtins.hasAttr "vars" manifestData) then
- 	foldlAttrs (acc: n: v: acc + "export ${n}=\"${v}\"\n") "" manifestData.vars
-      else "# No vars in manifest\n";
+  envrc = builtins.storePath defaultEnvrc;
+  vars = if (builtins.hasAttr "vars" manifestData) then
+    ( foldlAttrs (acc: n: v: acc + "export ${n}=\"${v}\"\n") "" manifestData.vars )
+    else "# No vars in manifest\n";
+  hook = if (builtins.hasAttr "hook" manifestData) then
+    manifestData.hook else {};
+  profile = if (builtins.hasAttr "profile" manifestData) then
+    manifestData.profile else {};
 
-      manifestScript = ''
-        export PATH="${coreutils}/bin''${PATH:+:}''${PATH}"
-        mkdir -p $out/activate.d $out/package-builds.d
-        cp --no-preserve=mode ${envrc} $out/activate.d/envrc
-        cat <<EOF >> $out/activate.d/envrc
-        ${vars}
-        EOF
-      '';
+  createManifestScript = ''
+    export PATH="${coreutils}/bin''${PATH:+:}''${PATH}"
+    mkdir -p $out/activate.d $out/package-builds.d
+    cp --no-preserve=mode ${envrc} $out/activate.d/envrc
+    cat <<EOF >> $out/activate.d/envrc
+    ${vars}
+    EOF
+  '' + (
+    if (builtins.hasAttr "on-activate" hook) then ''
+      cp ${builtins.toFile "hook-on-activate" hook."on-activate"} \
+        $out/activate.d/hook-on-activate
+    '' else ""
+  ) + (
+    if (builtins.hasAttr "bash" profile) then ''
+      cp ${builtins.toFile "profile-bash" profile.bash} \
+        $out/activate.d/profile-bash
+    '' else ""
+  ) + (
+    if (builtins.hasAttr "fish" profile) then ''
+      cp ${builtins.toFile "profile-fish" profile.fish} \
+        $out/activate.d/profile-fish
+    '' else ""
+  ) + (
+    if (builtins.hasAttr "tcsh" profile) then ''
+      cp ${builtins.toFile "profile-tcsh" profile.tcsh} \
+        $out/activate.d/profile-tcsh
+    '' else ""
+  ) + (
+    if (builtins.hasAttr "zsh" profile) then ''
+      cp ${builtins.toFile "profile-zsh" profile.zsh} \
+        $out/activate.d/profile-zsh
+    '' else ""
+  );
 
-      in builtins.derivation {
-        name = "manifest";
-        system = builtins.currentSystem;
-        builder = "/bin/sh";
-        args = [ "-eux" "-c" manifestScript ];
-      };
+  manifestPackage = builtins.derivation {
+    name = "manifest";
+    system = builtins.currentSystem;
+    builder = "/bin/sh";
+    args = [ "-eux" "-c" createManifestScript ];
+  };
 
 in manifestPackage
 

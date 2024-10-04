@@ -217,14 +217,17 @@ fi
 
 # Realise all packages in the manifest using the selected method.
 declare -a inputSrcs
-TIMEFORMAT='It took %R seconds to realise the packages.'
-time {
-  if [ "$buildMethod" = "nix" ]; then
+if [ "$buildMethod" = "nix" ]; then
+  TIMEFORMAT='It took %R seconds to realise the packages with nix.'
+  time {
     inputSrcs=("$(realiseFlakes)")
-  else
+  }
+else
+  TIMEFORMAT='It took %R seconds to realise the packages with pkgdb.'
+  time {
     inputSrcs=("$(realisePkgdb)")
-  fi
-}
+  }
+fi
 
 # Render the manifest package.
 declare manifestPackage
@@ -273,7 +276,7 @@ time {
 fi # XXX
 
 # Render derivation for building the flox environment.
-TIMEFORMAT='It took %R seconds to copy the flox environment outputs to Nix.'
+TIMEFORMAT='It took %R seconds to render the flox environment outputs as Nix packages.'
 time {
   cat <<EOF | $_nix build -L --offline --no-link --json --file - '^*'
 let
@@ -307,4 +310,7 @@ EOF
 }
 
 # Clean up temporary files.
-$_rm -rf "$_tmpdir"
+TIMEFORMAT='It took %R seconds to clean up temporary files.'
+time {
+  $_rm -rf "$_tmpdir"
+}

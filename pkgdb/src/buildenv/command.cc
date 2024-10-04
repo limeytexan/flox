@@ -61,6 +61,8 @@ BuildEnvCommand::BuildEnvCommand() : parser( "buildenv" )
 
 /* -------------------------------------------------------------------------- */
 
+/* OLD VERSION
+
 int
 BuildEnvCommand::run()
 {
@@ -98,10 +100,33 @@ BuildEnvCommand::run()
       storePath = containerBuilderStorePath;
     };
 
-  /* Print the resulting store path */
+  // Print the resulting store path
   nlohmann::json result
     = { { "store_path", store->printStorePath( storePath ) } };
   std::cout << result.dump() << '\n';
+  return EXIT_SUCCESS;
+}
+
+*/
+
+/* -------------------------------------------------------------------------- */
+
+int
+BuildEnvCommand::run()
+{
+
+  debugLog( "lockfile: " + this->lockfileContent.dump( 2 ) );
+
+  auto system = this->system.value_or( nix::settings.thisSystem.get() );
+
+  auto store = this->getStore();
+  auto state = this->getState();
+
+  debugLog( "building environment" );
+
+  auto pkgs = realiseFloxEnvPackages( state,
+                                      this->lockfileContent,
+                                      system );
 
   return EXIT_SUCCESS;
 }

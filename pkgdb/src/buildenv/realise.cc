@@ -871,6 +871,48 @@ makeActivationScriptsPackageDir( nix::EvalState & state )
 /* -------------------------------------------------------------------------- */
 
 /**
+ * @brief Realise nix packages required for an environment definition.
+ * @param state Nix state.
+ * @param lockfile Lockfile to extract environment definition from.
+ * @param system System to create the environment for.
+ * @return full closure of the references for all packages.
+ */
+nix::StorePathSet
+realiseFloxEnvPackages( nix::ref<nix::EvalState> & state,
+               const nlohmann::json &              lockfileContent,
+               const System &                      system )
+{
+  BuildenvLockfile lockfile = BuildenvLockfile(); // TODO: factor this out for both realiseFloxEnvPackages and createFloxEnv
+  lockfile.load_from_content( lockfileContent );
+
+  // Check this system is supported
+  auto systems = lockfile.manifest.getSystems();
+  if ( std::find( systems.begin(), systems.end(), system ) == systems.end() )
+    {
+      throw SystemNotSupportedByLockfile(
+        "'" + system + "' not supported by this environment" );
+    }
+
+  /* Extract derivations */
+  nix::StorePathSet                     references;
+
+  for ( auto const & package : lockfile.packages )
+    {
+      // Skip any packages not for this system
+      if ( package.system == system )
+        {
+          auto realised = getRealisedOutputs( state, package, system );
+          for ( auto [realisedPackage, storePath] : realised )
+            {
+              references.insert( storePath );
+            }
+        }
+    }
+
+  return references;
+}
+
+/**
  * @brief Create a nix package for an environment definition.
  * @param state Nix state.
  * @param lockfile Lockfile to extract environment definition from.

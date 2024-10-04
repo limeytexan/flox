@@ -333,6 +333,20 @@ getRealisedOutputs( nix::ref<nix::EvalState> &         state,
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Realise nix packages required for an environment definition.
+ * @param state A `nix` evaluator.
+ * @param lockfile a resolved and locked manifest.
+ * @param system system to build the environment for.
+ * @return full closure of the references for all packages.
+ */
+nix::StorePathSet
+realiseFloxEnvPackages( nix::ref<nix::EvalState> & state,
+                        const nlohmann::json &     lockfile,
+                        const System &             system );
+
+/* -------------------------------------------------------------------------- */
+
+/**
  * Evaluate an environment definition and realise it.
  * @param state A `nix` evaluator.
  * @param lockfile a resolved and locked manifest.

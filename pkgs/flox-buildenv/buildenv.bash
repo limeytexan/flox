@@ -251,8 +251,12 @@ cat <<EOF > $_tmpdir/attrs.json
   "activationScripts": "$activationScripts"
 }
 EOF
-NIX_ATTRS_JSON_FILE=$_tmpdir/attrs.json @out@/lib/builder.pl
+TIMEFORMAT='It took %R seconds to render the flox environment outputs outside of Nix.'
+time {
+  NIX_ATTRS_JSON_FILE=$_tmpdir/attrs.json @out@/lib/builder.pl
+}
 
+if [ -n "" ]; then # XXX disable refreshing requisites.txt for now, as it is not needed.
 # Refresh the contents of requisites.txt for each output to include the
 # full recursive closure of all requisites. See comment in builder.pl
 # regarding that this file is initially populated with only the direct
@@ -266,9 +270,10 @@ time {
     $_mv -f $_tmpdir/outputs/$_output/requisites.txt.new $_tmpdir/outputs/$_output/requisites.txt
   done
 }
+fi # XXX
 
 # Render derivation for building the flox environment.
-TIMEFORMAT='It took %R seconds to render the flox environment outputs.'
+TIMEFORMAT='It took %R seconds to copy the flox environment outputs to Nix.'
 time {
   cat <<EOF | $_nix build -L --offline --no-link --json --file - '^*'
 let

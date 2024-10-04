@@ -55,7 +55,7 @@ function buildenv() {
   #   [{"drvPath":"/nix/store/lv7c3qnzkbvmj5sg26qbsxbbwxqsh19g-floxenv.drv","outputs":{"develop":"/nix/store/zy6r86vp164qnll9n3l02yqn7qz92yhx-floxenv-develop","out":"/nix/store/f7z7lsh7r69shyfs2vlfgdknp7hz8k1g-floxenv"}}]
   #
   # For now, use jq to report the "develop" output path as the "store_path".
-  @out@/bin/buildenv -s "$serviceConfigYamlPath" "$@" | @jq@/bin/jq -r -M -c '.[0] | {"store_path": .outputs.develop}'
+  set -o pipefail && @out@/bin/buildenv -s "$serviceConfigYamlPath" "$@" | @jq@/bin/jq -r -M -c '.[0] | {"store_path": .outputs.develop}'
   exit 0
 }
 

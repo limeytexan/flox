@@ -517,24 +517,23 @@ if ($manifest) {
 
         print STDERR "created $nrLinks symlinks in $envName environment\n";
 
-        if ( -e "$out" ) {
-            print STDERR "CONFIRMED that $out exists\n";
-        } else {
-	    mkdir $out or die "cannot create directory `$out': $!";
+        unless ( -e "$out" ) {
+            mkdir $out or die "cannot create directory `$out': $!";
         }
 
-        # Write sorted requisites to $out/requisites.txt.
-	if ( $envName eq "develop" ) {
-            my $file = "$out/requisites.txt";
-            open(my $fh, '>', $file) or die "Could not open file '$file' $!";
+        # Write sorted requisites to $out/requisites.txt. Note that this
+        # file will only contain the packages encountered during the linking
+        # process, and that we will post-process this to include all the
+        # recursive dependencies in the next stage of processing.
+        my $file = "$out/requisites.txt";
+        open(my $fh, '>', $file) or die "Could not open file '$file' $!";
 
-            # Sort the keys and write to the file
-            foreach my $key (sort keys %done) {
-                print $fh "$key\n";
-            }
-            # Close the file
-            close $fh or die "Could not close file '$file' $!";
+        # Sort the keys and write to the file
+        foreach my $key (sort keys %done) {
+            print $fh "$key\n";
         }
+        # Close the file
+        close $fh or die "Could not close file '$file' $!";
     }
 
     # Avoid the use of "pkgs" and "pkgsPath" env variables by instead
@@ -554,7 +553,7 @@ if ($manifest) {
         %postponed = ();
         %symlinks = ();
         my $envName = $output->{"name"};
-        my $path = $nix_attrs->{"outputs"}{$envName};
+        my $path = $nix_attrs->{"outputDir"} . "/" . $envName;
         my $pkgs = $output->{"pkgs"};
         $FLOX_RECURSIVE_LINK = ( $output->{"recurse"} eq "1" ) ? 1 : 0;
         buildEnv($envName, $path, $pkgs);

@@ -86,10 +86,12 @@ declare _cp="@coreutils@/bin/cp"
 declare _jq="@jq@/bin/jq"
 declare _mkdir="@coreutils@/bin/mkdir"
 declare _mktemp="@coreutils@/bin/mktemp"
+declare _mv="@coreutils@/bin/mv"
 declare _nix="@nix@/bin/nix --extra-experimental-features flakes --extra-experimental-features nix-command"
 declare _nix_store="@nix@/bin/nix-store"
 declare _pkgdb="@floxPkgdb@/bin/pkgdb"
 declare _rm="@coreutils@/bin/rm"
+declare _sort="@coreutils@/bin/sort"
 declare _xargs="@findutils@/bin/xargs"
 
 # Nicer name for referring to the manifest.
@@ -194,7 +196,10 @@ function renderManifestPackage {
     fi
     # The following command emits the store path of the manifest package to stdout.
   }
-  echo $tmpdir
+  TIMEFORMAT='It took %R seconds to add the manifest package to the store.'
+  time {
+    $_nix store add-path ${tmpdir}
+  }
 }
 
 # main()
@@ -237,28 +242,61 @@ time {
   ' $manifest)"
 }
 
+# Render symlink trees in tmpdir for each output.
+cat <<EOF > $_tmpdir/attrs.json
+{
+  "system": "@system@",
+  "outputDir": "$_tmpdir/outputs",
+  "manifestPackage": "$manifestPackage",
+  "activationScripts": "$activationScripts"
+}
+EOF
+NIX_ATTRS_JSON_FILE=$_tmpdir/attrs.json @out@/lib/builder.pl
+
+# Refresh the contents of requisites.txt for each output to include the
+# full recursive closure of all requisites. See comment in builder.pl
+# regarding that this file is initially populated with only the direct
+# dependencies encountered during the recursive symlink creation.
+TIMEFORMAT='It took %R seconds to refresh the requisite.txt files.'
+time {
+  for output in $outputs; do
+    _output=${output//\"/}
+    $_xargs $_nix_store -qR < $_tmpdir/outputs/$_output/requisites.txt | \
+      $_sort > $_tmpdir/outputs/$_output/requisites.txt.new
+    $_mv -f $_tmpdir/outputs/$_output/requisites.txt.new $_tmpdir/outputs/$_output/requisites.txt
+  done
+}
+
 # Render derivation for building the flox environment.
 TIMEFORMAT='It took %R seconds to render the flox environment outputs.'
 time {
   cat <<EOF | $_nix build -L --offline --no-link --json --file - '^*'
-builtins.derivation {
-  name = "$name";
-  system = builtins.currentSystem;
-  builder = "@out@/lib/builder.pl";
+let
   outputs = [ $outputs ];
-  # Convert the supplied manifest package to a store path.
-  manifestPackage = /. + $manifestPackage;
-  # The following is already a storepath.
-  activationScripts = builtins.storePath $activationScripts;
-  # Declare all other input packages.
-  inputSrcs = map (x: builtins.storePath x) [ @out@ ${inputSrcs[@]} ];
-  # If the special attribute __structuredAttrs is set to true, the
-  # other derivation attributes are serialised in JSON format and
-  # made available to the builder via the file .attrs.json in the
-  # builder’s temporary directory. This obviates the need for
-  # passAsFile since JSON files have no size restrictions, unlike
-  # process environments.
-  __structuredAttrs = true;
+  outputSrc = /. + "$_tmpdir/outputs";
+  # The builder is simply a shell script that copies the outputs to the
+  # output names, eg "cp -a out \$out; cp -a develop \$develop; ...".
+  builderCommands = "cd \${outputSrc}; " + (
+    builtins.concatStringsSep "; " (
+      map (output: "$_cp -a \${output} \\\$\${output}") outputs
+    )
+  );
+
+in builtins.derivation {
+  # The following are mandatory derivation attributes.
+  name = "$name";
+  system = "@system@";
+  inherit outputs;
+  # The "/bin/sh" link is provided by default in all build sandboxes.
+  builder = "/bin/sh";
+  args = [ "-eux" "-c" builderCommands ];
+  # Declare all other input packages. Note that the use of "inputSrcs"
+  # here is arbitrary, and could be any other attribute name.
+  inputSrcs = map (x: builtins.storePath x) [
+    ${inputSrcs[@]}
+    $activationScripts
+    $manifestPackage
+  ];
 }
 EOF
 }

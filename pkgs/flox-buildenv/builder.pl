@@ -466,13 +466,10 @@ if ($manifest) {
         return \@outputData;
     }
 
-    sub buildEnv($$$$) {
-        my $nix_attrs = shift;
+    sub buildEnv($$$) {
         my $envName = shift;
         my $out = shift;
         my $pkgs = shift;
-
-        my $manifest = $nix_attrs->{"manifest"};
 
         # Symlink to the packages that have been installed explicitly by the
         # user.
@@ -526,12 +523,6 @@ if ($manifest) {
 	    mkdir $out or die "cannot create directory `$out': $!";
         }
 
-        # The manifest.lock file should be included in the manifest package, but
-        # if not then take this final opportunity to link it into place.
-        unless ( -e "$out/manifest.lock" ) {
-            symlink($manifest, "$out/manifest.lock") or die "cannot create \$out/manifest.lock: $!";
-        }
-
         # Write sorted requisites to $out/requisites.txt.
 	if ( $envName eq "develop" ) {
             my $file = "$out/requisites.txt";
@@ -551,7 +542,7 @@ if ($manifest) {
     die "NIX_ATTRS_JSON_FILE not defined"
         unless defined $ENV{"NIX_ATTRS_JSON_FILE"};
     my $nix_attrs = parseJSONFile($ENV{"NIX_ATTRS_JSON_FILE"});
-    my $manifestData = parseJSONFile($nix_attrs->{"manifest"});
+    my $manifestData = parseJSONFile($nix_attrs->{"manifestPackage"} . "/manifest.lock");
 
     # Construct outputData from the manifest.
     my $outputData = outputData($nix_attrs, $manifestData);
@@ -566,7 +557,7 @@ if ($manifest) {
         my $path = $nix_attrs->{"outputs"}{$envName};
         my $pkgs = $output->{"pkgs"};
         $FLOX_RECURSIVE_LINK = ( $output->{"recurse"} eq "1" ) ? 1 : 0;
-        buildEnv($nix_attrs, $envName, $path, $pkgs);
+        buildEnv($envName, $path, $pkgs);
     }
 }
 # </flox>

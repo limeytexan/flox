@@ -95,6 +95,10 @@ declare _xargs="@findutils@/bin/xargs"
 # Nicer name for referring to the manifest.
 declare manifest="$1"
 
+# Temporary directory for storing rendered files.
+declare _tmpdir
+_tmpdir=$($_mktemp -d --dry-run)
+
 # Function for realising packages using legacy pkgdb. Returns the "array"
 # of [one] store path to be used in the derivation's inputSrcs.
 function realisePkgdb {
@@ -156,8 +160,6 @@ function renderManifestPackage {
   # Make note to create the temporary directory with the same name
   # so that subsequent `nix store add-path` invocations will yield
   # the same path.
-  local _tmpdir
-  _tmpdir=$($_mktemp -d --dry-run)
   local tmpdir="$_tmpdir/$name-manifest"
   TIMEFORMAT='It took %R seconds to render the manifest package files.'
   time {
@@ -192,11 +194,7 @@ function renderManifestPackage {
     fi
     # The following command emits the store path of the manifest package to stdout.
   }
-  TIMEFORMAT='It took %R seconds to add the manifest package to the store.'
-  time {
-    $_nix store add-path ${tmpdir}
-  }
-  $_rm -rf $_tmpdir
+  echo $tmpdir
 }
 
 # main()
@@ -248,12 +246,11 @@ builtins.derivation {
   system = builtins.currentSystem;
   builder = "@out@/lib/builder.pl";
   outputs = [ $outputs ];
-  # Convert the supplied manifest to a store path.
-  manifest = /. + $manifest;
-  # Both of the following are storepaths.
+  # Convert the supplied manifest package to a store path.
+  manifestPackage = /. + $manifestPackage;
+  # The following is already a storepath.
   activationScripts = builtins.storePath $activationScripts;
-  manifestPackage = builtins.storePath $manifestPackage;
-  # Declare all inputs.
+  # Declare all other input packages.
   inputSrcs = map (x: builtins.storePath x) [ @out@ ${inputSrcs[@]} ];
   # If the special attribute __structuredAttrs is set to true, the
   # other derivation attributes are serialised in JSON format and
@@ -265,3 +262,6 @@ builtins.derivation {
 }
 EOF
 }
+
+# Clean up temporary files.
+$_rm -rf "$_tmpdir"

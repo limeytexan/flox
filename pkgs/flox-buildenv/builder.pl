@@ -9,7 +9,6 @@ use File::Basename;
 use File::Compare;
 use JSON::PP;
 use Time::HiRes qw( gettimeofday tv_interval );
-use Data::Dumper;
 
 STDOUT->autoflush(1);
 
@@ -556,7 +555,6 @@ if ($manifest) {
         %postponed = ();
         %symlinks = ();
         my $envName = $output->{"name"};
-warn Dumper $nix_attrs->{"outputs"};
 
         my $path = $nix_attrs->{"outputs"}{$envName};
         my $pkgs = $output->{"pkgs"};

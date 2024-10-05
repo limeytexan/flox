@@ -1,18 +1,20 @@
-{ activationScripts
+{ activationScripts ? "@activationScripts@"
 , builder ? "@out@/lib/builder.pl"
 , coreutils ? "@coreutils@"
 , defaultEnvrc ? "@defaultEnvrc@"
 , manifest
-, name
+, name ? "floxenv"
+, serviceConfigYaml ? ""
 }:
 
 let
+
   # A helpful library function copied from nixpkgs/lib/attrsets.nix.
-  foldlAttrs = f: init: set:
-    builtins.foldl'
-      (acc: name: f acc name set.${name})
-      init
-      (builtins.attrNames set);
+# foldlAttrs = f: init: set:
+#   builtins.foldl'
+#     (acc: name: f acc name set.${name})
+#     init
+#     (builtins.attrNames set);
 
   # The system we're building for.
   system = builtins.currentSystem;
@@ -32,9 +34,18 @@ let
     manifestData.profile else {};
   vars = if (builtins.hasAttr "vars" manifestData) then (
     builtins.toFile "envrc-vars" (
-      foldlAttrs (
-        acc: n: v: acc + "export ${n}=\"${v}\"\n"
-      ) "" manifestData.vars
+
+      builtins.concatStringsSep "" (
+        builtins.map (
+          n: "export ${n}=\"${builtins.getAttr n manifestData.vars}\"\n"
+        ) (builtins.attrNames manifestData.vars)
+      )
+
+# alternative ... worth it?
+#      foldlAttrs (
+#        acc: n: v: acc + "export ${n}=\"${v}\"\n"
+#      ) "" manifestData.vars
+
     )
   ) else null;
 
@@ -76,6 +87,12 @@ let
         cp ${builtins.toFile "hook-on-activate" hook."on-activate"} $out/activate.d/hook-on-activate
       '' else ""
     )
+    # service-config.yaml section
+    (
+      if (serviceConfigYaml != "") then ''
+        cp ${/. + serviceConfigYaml} $out/activate.d/service-config.yaml
+      '' else ""
+    )
   ] ++ (
     # [profile] section
     builtins.map ( i:
@@ -109,7 +126,7 @@ let
     builtins.concatStringsSep "" createManifestChunks
   );
 
-  manifestPackage = builtins.trace createManifestScript builtins.derivation {
+  manifestPackage = builtins.derivation {
     name = "manifest";
     inherit system;
     builder = "/bin/sh";
@@ -117,8 +134,8 @@ let
   };
 
 in builtins.derivation {
-  name = "floxenv-${name}";
-  outputs = builtins.trace (builtins.concatStringsSep " " floxenvOutputs) floxenvOutputs;
+  inherit name;
+  outputs = floxenvOutputs;
 
   # Pull in external attributes and those calculated above.
   inherit activationScripts builder inputSrcs manifestPackage system;

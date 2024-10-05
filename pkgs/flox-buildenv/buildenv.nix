@@ -11,58 +11,80 @@ let
       init
       (builtins.attrNames set);
 
+  # Copy manifest file into the store for access within derivations.
+  manifestLock = /. + manifest;
+
   # Parse the manifest file.
   manifestLockData = builtins.fromJSON (builtins.readFile manifest);
   manifestData = manifestLockData.manifest;
 
-  envrc = builtins.storePath defaultEnvrc;
   vars = if (builtins.hasAttr "vars" manifestData) then
     ( foldlAttrs (acc: n: v: acc + "export ${n}=\"${v}\"\n") "" manifestData.vars )
     else "# No vars in manifest\n";
+
+  build = if (builtins.hasAttr "build" manifestData) then
+    manifestData.build else {};
   hook = if (builtins.hasAttr "hook" manifestData) then
     manifestData.hook else {};
   profile = if (builtins.hasAttr "profile" manifestData) then
     manifestData.profile else {};
 
-  createManifestScript = ''
-    export PATH="${coreutils}/bin''${PATH:+:}''${PATH}"
-    mkdir -p $out/activate.d $out/package-builds.d
-    cp --no-preserve=mode ${envrc} $out/activate.d/envrc
-    cat <<EOF >> $out/activate.d/envrc
-    ${vars}
-    EOF
-  '' + (
-    if (builtins.hasAttr "on-activate" hook) then ''
-      cp ${builtins.toFile "hook-on-activate" hook."on-activate"} \
-        $out/activate.d/hook-on-activate
-    '' else ""
-  ) + (
-    if (builtins.hasAttr "bash" profile) then ''
-      cp ${builtins.toFile "profile-bash" profile.bash} \
-        $out/activate.d/profile-bash
-    '' else ""
-  ) + (
-    if (builtins.hasAttr "fish" profile) then ''
-      cp ${builtins.toFile "profile-fish" profile.fish} \
-        $out/activate.d/profile-fish
-    '' else ""
-  ) + (
-    if (builtins.hasAttr "tcsh" profile) then ''
-      cp ${builtins.toFile "profile-tcsh" profile.tcsh} \
-        $out/activate.d/profile-tcsh
-    '' else ""
-  ) + (
-    if (builtins.hasAttr "zsh" profile) then ''
-      cp ${builtins.toFile "profile-zsh" profile.zsh} \
-        $out/activate.d/profile-zsh
-    '' else ""
+  createManifestScript = builtins.toFile "create-manifest-script" (
+    ''
+      export PATH="${coreutils}/bin''${PATH:+:}''${PATH}"
+      mkdir -p $out/activate.d
+      cp --no-preserve=mode ${manifestLock} $out/manifest.lock
+      cp --no-preserve=mode ${defaultEnvrc} $out/activate.d/envrc
+    '' + (
+      if (builtins.hasAttr "vars" manifestData) then (
+        foldlAttrs (
+          acc: n: v: acc + "export ${n}=\"${v}\"\n"
+        ) "" manifestData.vars
+      ) else ""
+    ) + (
+      if (builtins.hasAttr "on-activate" hook) then ''
+        cp ${builtins.toFile "hook-on-activate" hook."on-activate"} \
+          $out/activate.d/hook-on-activate
+      '' else ""
+    ) + (
+      if (builtins.hasAttr "bash" profile) then ''
+        cp ${builtins.toFile "profile-bash" profile.bash} \
+          $out/activate.d/profile-bash
+      '' else ""
+    ) + (
+      if (builtins.hasAttr "fish" profile) then ''
+        cp ${builtins.toFile "profile-fish" profile.fish} \
+          $out/activate.d/profile-fish
+      '' else ""
+    ) + (
+      if (builtins.hasAttr "tcsh" profile) then ''
+        cp ${builtins.toFile "profile-tcsh" profile.tcsh} \
+          $out/activate.d/profile-tcsh
+      '' else ""
+    ) + (
+      if (builtins.hasAttr "zsh" profile) then ''
+        cp ${builtins.toFile "profile-zsh" profile.zsh} \
+          $out/activate.d/profile-zsh
+      '' else ""
+/*
+    ) + (
+      builtins.concatMap (
+        i:
+        ''
+          mkdir -p $out/package-builds.d
+          cp ${builtins.toFile "profile-zsh" build.${i}.command} \
+            $out/package-builds.d/${i}
+        ''
+      ) ( builtins.attrNames build )
+*/
+    )
   );
 
-  manifestPackage = builtins.derivation {
+  manifestPackage = builtins.trace createManifestScript builtins.derivation {
     name = "manifest";
     system = builtins.currentSystem;
     builder = "/bin/sh";
-    args = [ "-eux" "-c" createManifestScript ];
+    args = [ "-eux" createManifestScript ];
   };
 
 in manifestPackage

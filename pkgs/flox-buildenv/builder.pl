@@ -553,7 +553,7 @@ if ($manifest) {
         %postponed = ();
         %symlinks = ();
         my $envName = $output->{"name"};
-        my $path = $nix_attrs->{"outputDir"} . "/" . $envName;
+        my $path = $nix_attrs->{"outputs"}{$envName};
         my $pkgs = $output->{"pkgs"};
         $FLOX_RECURSIVE_LINK = ( $output->{"recurse"} eq "1" ) ? 1 : 0;
         buildEnv($envName, $path, $pkgs);

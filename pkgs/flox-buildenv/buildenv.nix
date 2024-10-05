@@ -29,55 +29,62 @@ let
   profile = if (builtins.hasAttr "profile" manifestData) then
     manifestData.profile else {};
 
-  createManifestScript = builtins.toFile "create-manifest-script" (
+  createManifestChunks = [
+    # static chunks
     ''
       export PATH="${coreutils}/bin''${PATH:+:}''${PATH}"
       mkdir -p $out/activate.d
       cp --no-preserve=mode ${manifestLock} $out/manifest.lock
       cp --no-preserve=mode ${defaultEnvrc} $out/activate.d/envrc
-    '' + (
+    ''
+
+    # [vars] appended to envrc
+    (
       if (builtins.hasAttr "vars" manifestData) then (
         foldlAttrs (
           acc: n: v: acc + "export ${n}=\"${v}\"\n"
         ) "" manifestData.vars
       ) else ""
-    ) + (
+    )
+
+    # [hook] section
+    (
       if (builtins.hasAttr "on-activate" hook) then ''
         cp ${builtins.toFile "hook-on-activate" hook."on-activate"} \
           $out/activate.d/hook-on-activate
       '' else ""
-    ) + (
-      if (builtins.hasAttr "bash" profile) then ''
-        cp ${builtins.toFile "profile-bash" profile.bash} \
-          $out/activate.d/profile-bash
-      '' else ""
-    ) + (
-      if (builtins.hasAttr "fish" profile) then ''
-        cp ${builtins.toFile "profile-fish" profile.fish} \
-          $out/activate.d/profile-fish
-      '' else ""
-    ) + (
-      if (builtins.hasAttr "tcsh" profile) then ''
-        cp ${builtins.toFile "profile-tcsh" profile.tcsh} \
-          $out/activate.d/profile-tcsh
-      '' else ""
-    ) + (
-      if (builtins.hasAttr "zsh" profile) then ''
-        cp ${builtins.toFile "profile-zsh" profile.zsh} \
-          $out/activate.d/profile-zsh
-      '' else ""
-/*
-    ) + (
-      builtins.concatMap (
-        i:
-        ''
-          mkdir -p $out/package-builds.d
-          cp ${builtins.toFile "profile-zsh" build.${i}.command} \
-            $out/package-builds.d/${i}
-        ''
-      ) ( builtins.attrNames build )
-*/
     )
+
+  ] ++ (
+
+    # [profile] section
+    builtins.map ( i:
+      if (builtins.hasAttr i profile) then
+        let f = builtins.toFile "profile-${i}" (builtins.getAttr i profile);
+        in "cp ${f} $out/activate.d/profile-${i}\n"
+      else ""
+    ) [ "bash" "fish" "tcsh" "zsh" ]
+
+  ) ++ (
+
+    # [build] section
+    builtins.map ( i:
+      let b = builtins.getAttr i build;
+      in (
+        if (builtins.hasAttr "command" b) then (
+          let f = builtins.toFile "build-${i}" (builtins.getAttr "command" b);
+          in ''
+            mkdir -p $out/package-builds.d
+            cp ${f} $out/package-builds.d/${i}
+          ''
+        ) else ""
+      )
+    ) ( builtins.attrNames build )
+
+  );
+
+  createManifestScript = builtins.toFile "create-manifest-script" (
+    builtins.concatStringsSep "" createManifestChunks
   );
 
   manifestPackage = builtins.trace createManifestScript builtins.derivation {

@@ -28,6 +28,7 @@
       builtins.readFile ./buildenv.bash
     )
   );
+  buildenv_nix = ./buildenv.nix;
   pkgdb = (
     writers.writeBash "pkgdb" (
       builtins.readFile ./pkgdb.bash
@@ -86,8 +87,11 @@ in
     # ... but in the meantime, we use a modified version of builder.pl to
     # make it easier to hack on.
     cp ${builder_pl} "$out/lib/builder.pl"
-
     chmod +x "$out/lib/builder.pl"
     substituteAllInPlace "$out/lib/builder.pl"
+
+    cp ${buildenv_nix} "$out/lib/buildenv.nix"
+    substituteAllInPlace "$out/lib/buildenv.nix"
+
     cp ${build_packages_jq} "$out/lib/build-packages.jq"
   ''

@@ -8,6 +8,8 @@ use File::Path;
 use File::Basename;
 use File::Compare;
 use JSON::PP;
+use Time::HiRes qw( gettimeofday tv_interval );
+use Data::Dumper;
 
 STDOUT->autoflush(1);
 
@@ -470,6 +472,7 @@ if ($manifest) {
         my $envName = shift;
         my $out = shift;
         my $pkgs = shift;
+        my $t0 = [gettimeofday];
 
         # Symlink to the packages that have been installed explicitly by the
         # user.
@@ -515,7 +518,7 @@ if ($manifest) {
             }
         }
 
-        print STDERR "created $nrLinks symlinks in $envName environment\n";
+        printf STDERR "created $nrLinks symlinks in $envName environment in %.06f seconds\n", tv_interval ( $t0 );
 
         unless ( -e "$out" ) {
             mkdir $out or die "cannot create directory `$out': $!";
@@ -553,6 +556,8 @@ if ($manifest) {
         %postponed = ();
         %symlinks = ();
         my $envName = $output->{"name"};
+warn Dumper $nix_attrs->{"outputs"};
+
         my $path = $nix_attrs->{"outputs"}{$envName};
         my $pkgs = $output->{"pkgs"};
         $FLOX_RECURSIVE_LINK = ( $output->{"recurse"} eq "1" ) ? 1 : 0;

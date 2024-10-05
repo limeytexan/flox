@@ -1,9 +1,8 @@
-{ # The path to the flox "activation-scripts" package.
-  activationScripts
-, builder ? "/nix/store/48dd4vn68pq00dmz26dln8hsxiz1asz8-flox-buildenv-0.0.1/lib/builder.pl"
-, coreutils ? "/nix/store/fh4107h5wf0ad7avarvhsdzcw7g2laq9-coreutils-full-9.5"
-, defaultEnvrc ? "/nix/store/7mibq9n5zad7ndyl156dv8r764m5yc08-defaultEnvrc"
-, manifest ? "/Users/brantley/.cache/flox/remote/limeytexan/default/.flox/env/manifest.lock"
+{ activationScripts
+, builder ? "@out@/lib/builder.pl"
+, coreutils ? "@coreutils@"
+, defaultEnvrc ? "@defaultEnvrc@"
+, manifest
 , name
 }:
 
@@ -39,14 +38,20 @@ let
     )
   ) else null;
 
-  # Calculate outputs.
-  outputs = [ "out" "develop" ] ++ ( builtins.attrNames build );
+  # Calculate floxenv outputs.
+  floxenvOutputs = [ "out" "develop" ] ++ (
+    builtins.map (x: "build-${x}") (builtins.attrNames build)
+  );
 
-  # Calculate inputSrcs by noting all storePaths encountered in the packages list.
-  inputSrcs = builtins.map (
-    package: builtins.map (
-      output: foldlAttrs (acc: n: v: acc ++ [v]) [] output
-    ) package.outputs
+  # Calculate inputSrcs by noting all storePaths for this system's
+  # packages found in the packages list.
+  inputSrcs = builtins.concatMap (
+    package: if package.system == system then (
+      if (builtins.hasAttr "outputs" package) then (
+        # TODO: filter by outputsToInstall?
+        builtins.attrValues package.outputs
+      ) else []
+    ) else []
   ) manifestLockData.packages;
 
   createManifestChunks = [
@@ -112,8 +117,11 @@ let
   };
 
 in builtins.derivation {
+  name = "floxenv-${name}";
+  outputs = builtins.trace (builtins.concatStringsSep " " floxenvOutputs) floxenvOutputs;
+
   # Pull in external attributes and those calculated above.
-  inherit activationScripts builder inputSrcs manifestPackage name outputs system;
+  inherit activationScripts builder inputSrcs manifestPackage system;
 
   # If the special attribute __structuredAttrs is set to true, the
   # other derivation attributes are serialised in JSON format and

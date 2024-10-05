@@ -97,6 +97,18 @@ declare _xargs="@findutils@/bin/xargs"
 # Nicer name for referring to the manifest.
 declare manifest="$1"
 
+# Render derivation for building the flox environment.
+TIMEFORMAT='It took %R seconds to render the flox environment outputs as Nix packages.'
+time {
+  $_nix build -L --offline --no-link --json \
+    --argstr activationScripts @activationScripts@ \
+    --argstr defaultEnvrc @defaultEnvrc@ \
+    --argstr manifest $manifest \
+    --argstr name $name \
+    --file @out@/lib/buildenv.nix '^*'
+}
+exit 0
+
 # Temporary directory for storing rendered files.
 declare _tmpdir
 _tmpdir=$($_mktemp -d --dry-run)
@@ -274,40 +286,6 @@ time {
   done
 }
 fi # XXX
-
-# Render derivation for building the flox environment.
-TIMEFORMAT='It took %R seconds to render the flox environment outputs as Nix packages.'
-time {
-  cat <<EOF | $_nix build -L --offline --no-link --json --file - '^*'
-let
-  outputs = [ $outputs ];
-  outputSrc = /. + "$_tmpdir/outputs";
-  # The builder is simply a shell script that copies the outputs to the
-  # output names, eg "cp -a out \$out; cp -a develop \$develop; ...".
-  builderCommands = "cd \${outputSrc}; " + (
-    builtins.concatStringsSep "; " (
-      map (output: "$_cp -a \${output} \\\$\${output}") outputs
-    )
-  );
-
-in builtins.derivation {
-  # The following are mandatory derivation attributes.
-  name = "$name";
-  system = "@system@";
-  inherit outputs;
-  # The "/bin/sh" link is provided by default in all build sandboxes.
-  builder = "/bin/sh";
-  args = [ "-eux" "-c" builderCommands ];
-  # Declare all other input packages. Note that the use of "inputSrcs"
-  # here is arbitrary, and could be any other attribute name.
-  inputSrcs = map (x: builtins.storePath x) [
-    ${inputSrcs[@]}
-    $activationScripts
-    $manifestPackage
-  ];
-}
-EOF
-}
 
 # Clean up temporary files.
 TIMEFORMAT='It took %R seconds to clean up temporary files.'

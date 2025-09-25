@@ -1,0 +1,163 @@
+---
+config:
+  theme: mc
+---
+flowchart TB
+ subgraph cli["Flox CLI"]
+        n36["Initialise state:<br>FLOX_ENV<br>FLOX_ENV_DESCRIPTION<br>FLOX_ENV_PROJECT<br>FLOX_PARENT_PID<br>write metrics spool files<br>... plus temp files, etc."]
+        s3["Registry Module"]
+        n34{"in-place<br>mode?"}
+        n79{"cmd mode?"}
+        n37[["command.exec(userShell)"]]
+        n80[["command.exec(cmd args)"]]
+        n35[["echoInPlace(userShell)"]]
+        n88["parse args"]
+        n89{"activate()"}
+        n134["replayEnv()"]
+        n83["activation attach --timeout X<br><br>echo $out/libexec/activation attach --remove $$<br><br>replayenv $userShell<br><br>cat $FLOX_ENV/activate.d/profile.common<br><br>cat $FLOX_ENV/activate.d/profile.$userShell<br>(_the latter replays the env again_)"]
+  end
+ subgraph s3["Registry Module"]
+        n111["exists?"]
+        n112["active and<br>env up to date?"]
+        n113["ready?"]
+        n114["do_start()<br>fork()"]
+        n115["do_attach()"]
+        n116["wait ready(child)"]
+  end
+ subgraph activate["Activate"]
+        n7[["env0=snapshotEnv()"]]
+        n6["source etc-profiles"]
+        n62[["env1=snapshotEnv()<br>"]]
+        nd["source [vars] (envrc)<br>source hook.on-activate<br>"]
+        n63[["env2=snapshotEnv()<br>"]]
+  end
+ subgraph colorkey["Color Key"]
+        node_aqepkktvr["flox CLI<br>(rust)"]
+        n0["bash"]
+        nz["userShell"]
+        n110["activation<br>(rust)"]
+  end
+ subgraph s1["process-compose supervisor"]
+        n95["while(true); do<br>process-compose;<br>done"]
+  end
+ subgraph s2["process-compose"]
+        n96["process-compose"]
+        n98["flox-never-exit"]
+  end
+ subgraph watchdog["Executive"]
+        ns[["Await death of ppid()<br>_and_<br>registry_PIDs($_FLOX_UUID)"]]
+        ny[["Clean up state<br>(remove temp files, etc.)"]]
+        nv(["Rust Destructors<br>(Submit sentry, metrics, etc.)"])
+        n66[["stop_process-compose()"]]
+        n121["command.exec(bash $FLOX_ENV/activate)"]
+        n125["setsid()<br>register as subreaper"]
+        n126["fork()"]
+        n127["waitpid(child)"]
+        n130["activation env-ready<br>(Signals to ppid ready to continue)"]
+        n94[["initialise tokio, sentry, metrics, etc."]]
+        n100["submit spooled metrics, sentry data<br>"]
+        n133["fork()"]
+  end
+ subgraph invoke["userShell"]
+        n81[["source $FLOX_ENV/activate.d/profile.common<br>source $FLOX_ENV/activate.d/profile.$userShell<br>(_the latter replays the env again_)"]]
+        n82(["interactive"])
+  end
+    ns --> n66
+    ny --> nv
+    n7 --> n6
+    nv ~~~ colorkey
+    node_aqepkktvr ~~~ n0
+    n0 ~~~ nz
+    n6 --> n62
+    n34 -- yes: activate_in_place() --> n35
+    n34 -- no --> n134
+    n62 --> nd
+    n66 --> ny
+    n79 -- yes: activate_command() --> n80
+    nd --> n63
+    n81 --> n82
+    A(["Parent PID<br>flox activate<br>"]) -- fork() &amp;&amp; exec(flox) --> n88
+    n88 --> n89
+    n94 --> n130
+    n95 --> n96
+    n96 --> n98
+    n89 --> n36
+    n100 --> ns
+    nz ~~~ n110
+    n111 -- yes --> n112
+    n111 -- no --> n114
+    n112 -- yes --> n113
+    n112 -- no --> n114
+    n113 --> n115
+    n113 -- no --> n111
+    n114 -- child --> n125
+    n114 -- parent --> n116
+    n121 --> n7
+    n125 --> n126
+    n126 -- parent --> n127
+    n126 -- child --> n121
+    n127 --> n133
+    n116 --> n115
+    n79 -- no: activate_interactive() --> n37
+    n133 -- parent --> n94
+    n133 -- child --> s1
+    n130 --> n100
+    n130 -.-> n116
+    n36 --> s3
+    n63 -.-> n127
+    n98 ~~~ n94
+    n37 --> n81
+    n35 --> n83
+    n115 --> n34
+    n134 --> n79
+    n83@{ shape: doc}
+    n111@{ shape: diam}
+    n112@{ shape: diam}
+    n113@{ shape: diam}
+    n114@{ shape: rect}
+    n130@{ shape: subproc}
+    style n36 fill:#FFE0B2
+    style n34 fill:#FFE0B2
+    style n79 fill:#FFE0B2
+    style n37 fill:#FFE0B2
+    style n80 fill:#FFE0B2
+    style n35 fill:#FFE0B2
+    style n88 fill:#FFE0B2
+    style n89 fill:#FFE0B2
+    style n134 fill:#FFE0B2
+    style n83 fill:#BBDEFB
+    style n111 fill:#C8E6C9
+    style n112 fill:#C8E6C9
+    style n113 fill:#C8E6C9
+    style n114 fill:#C8E6C9
+    style n115 fill:#C8E6C9
+    style n116 fill:#C8E6C9
+    style n7 fill:#BBDEFB
+    style n6 fill:#BBDEFB
+    style n62 fill:#BBDEFB
+    style nd fill:#BBDEFB
+    style n63 fill:#BBDEFB
+    style node_aqepkktvr fill:#FFE0B2
+    style n0 fill:#BBDEFB
+    style nz fill:#E1BEE7
+    style n110 fill:#C8E6C9
+    style ns fill:#FFE0B2
+    style ny fill:#FFE0B2
+    style nv fill:#FFE0B2
+    style n66 fill:#FFE0B2
+    style n121 fill:#FFE0B2
+    style n125 fill:#FFE0B2
+    style n126 fill:#FFE0B2
+    style n127 fill:#FFE0B2
+    style n130 fill:#FFE0B2
+    style n94 fill:#FFE0B2
+    style n100 fill:#FFE0B2
+    style n133 fill:#FFE0B2
+    style n81 fill:#E1BEE7
+    style n82 fill:#E1BEE7
+    style A fill:#FFFFFF
+    style s1 fill:#F8F8F8
+    style watchdog fill:#F8F8F8
+    style activate fill:#F8F8F8
+    style cli fill:#F8F8F8
+    style s2 fill:#F8F8F8

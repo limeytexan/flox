@@ -57,7 +57,7 @@ let
 
       # Reexport of the platform flox is being built for
       NIX_TARGET_SYSTEM = targetPlatform.system;
-      FLOX_ACTIVATIONS_BIN="${flox-activations}/bin/flox-activations";
+      FLOX_ACTIVATIONS_BIN = "${flox-activations}/bin/flox-activations";
     }
     // lib.optionalAttrs hostPlatform.isDarwin {
       PATH_LOCALE = "${darwin.locale}/share/locale";
